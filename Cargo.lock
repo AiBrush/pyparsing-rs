@@ -147,6 +147,7 @@ dependencies = [
 name = "pyparsing-rs"
 version = "0.1.0"
 dependencies = [
+ "memchr",
  "once_cell",
  "pyo3",
  "regex",
