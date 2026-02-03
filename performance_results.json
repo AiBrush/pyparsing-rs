@@ -1,0 +1,14 @@
+{
+  "simple_literal": {
+    "speedup": 19.51053254959458,
+    "target_met": false
+  },
+  "word_match": {
+    "speedup": 15.674349258198118,
+    "target_met": false
+  },
+  "regex_match": {
+    "speedup": 22.919299740065192,
+    "target_met": false
+  }
+}
