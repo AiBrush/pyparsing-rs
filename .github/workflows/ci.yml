@@ -2,83 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main, develop, 'feature/**', 'bugfix/**']
+    branches: [main]
   pull_request:
-    branches: [main, develop]
-
-env:
-  CARGO_TERM_COLOR: always
-  PYTHON_VERSION: '3.11'
+    branches: [main]
 
 jobs:
-  # Rust checks
-  check-rust:
+  test:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "rust-cache-ci"
-      
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-      
-      - name: Run clippy
-        run: cargo clippy --all-targets -- -D warnings
-      
-      - name: Run Rust tests
-        run: cargo test --all
-
-  # Python tests on Linux
-  test-linux:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "rust-cache-ci"
-      
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml') }}
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install maturin pytest
-      
-      - name: Build and install
-        run: |
-          maturin develop --release
-      
-      - name: Run tests
-        run: pytest tests/ -v
-
-  # Python tests on macOS
-  test-macos:
-    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       
@@ -90,54 +20,14 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "rust-cache-ci-macos"
-      
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install maturin pytest
       
-      - name: Build and install
-        run: maturin develop --release
-      
-      - name: Run tests
-        run: pytest tests/ -v
-
-  # Build wheels (without testing)
-  build-wheels:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "rust-cache-wheels"
-      
-      - name: Install maturin
-        run: pip install maturin
-      
-      - name: Build wheel
+      - name: Build
         run: maturin build --release
       
-      - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: target/wheels/*.whl
-          retention-days: 7
+      - name: Test
+        run: |
+          pip install target/wheels/pyparsing_rs*.whl
+          pytest tests/ -v

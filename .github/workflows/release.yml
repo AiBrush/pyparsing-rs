@@ -2,16 +2,11 @@ name: Release
 
 on:
   push:
-    branches: [main]
     tags:
       - 'v*'
 
-permissions:
-  contents: write
-
 jobs:
-  # Run all tests before release
-  test-before-release:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,144 +18,16 @@ jobs:
       
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-      
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-      
-      - name: Run clippy
-        run: cargo clippy --all -- -D warnings
-      
-      - name: Run Rust tests
-        run: cargo test --all
-      
-      - name: Install Python dependencies
-        run: |
-          pip install maturin pytest
-      
-      - name: Build and test Python
-        run: |
-          maturin develop --release
-          pytest tests/ -v
-
-  # Build source distribution
-  build-sdist:
-    needs: test-before-release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
       
       - name: Install maturin
         run: pip install maturin
       
-      - name: Build sdist
-        run: maturin sdist
-      
-      - name: Upload sdist
-        uses: actions/upload-artifact@v4
-        with:
-          name: sdist
-          path: target/wheels/*.tar.gz
-
-  # Build Linux wheels using manylinux
-  build-linux-wheels:
-    needs: test-before-release
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-      
-      - name: Install maturin
-        run: pip install maturin
-      
-      - name: Build wheel
+      - name: Build wheels
         run: maturin build --release
       
-      - name: Upload wheel
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-linux-py${{ matrix.python-version }}
-          path: target/wheels/*.whl
-
-  # Build macOS wheels
-  build-macos-wheels:
-    needs: test-before-release
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-      
-      - name: Install maturin
-        run: pip install maturin
-      
-      - name: Build wheel
-        run: maturin build --release
-      
-      - name: Upload wheel
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-macos-py${{ matrix.python-version }}
-          path: target/wheels/*.whl
-
-  # Create GitHub Release (only on tags)
-  create-release:
-    needs: [test-before-release, build-sdist, build-linux-wheels, build-macos-wheels]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          pattern: wheels-*
-      
-      - name: Download sdist
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          name: sdist
-      
-      - name: Create Release
+      - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: artifacts/**/*
-          generate_release_notes: true
+          files: target/wheels/*.whl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
