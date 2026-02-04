@@ -15,6 +15,9 @@ thiserror = "1.0"
 rustc-hash = "2.0"
 smallvec = "1.13"
 memchr = "2.7"
+rayon = "1.8"
+memmap2 = "0.9"
+libc = "0.2"
 
 [profile.release]
 lto = true

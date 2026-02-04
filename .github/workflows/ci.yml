@@ -7,48 +7,107 @@ on:
     branches: [main, develop]
 
 env:
-  CACHE_TTL: 21600  # 6 hours in seconds
+  CARGO_TERM_COLOR: always
+  PYTHON_VERSION: '3.11'
 
 jobs:
-  test-rust:
-    name: Test Rust (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+  # Rust checks
+  check-rust:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       
-      - name: Cache cargo (6 hours)
+      - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "rust-cache"
-          cache-directories: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
+          shared-key: "rust-cache-ci"
       
       - name: Check formatting
         run: cargo fmt --all -- --check
       
       - name: Run clippy
-        run: cargo clippy --all -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
       
-      - name: Run tests
+      - name: Run Rust tests
         run: cargo test --all
 
-  test-python:
-    name: Test Python (${{ matrix.os }}, ${{ matrix.python-version }})
+  # Python tests on Linux
+  test-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rust-cache-ci"
+      
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml') }}
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin pytest
+      
+      - name: Build and install
+        run: |
+          maturin develop --release
+      
+      - name: Run tests
+        run: pytest tests/ -v
+
+  # Python tests on macOS
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rust-cache-ci-macos"
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin pytest
+      
+      - name: Build and install
+        run: maturin develop --release
+      
+      - name: Run tests
+        run: pytest tests/ -v
+
+  # Build wheels (without testing)
+  build-wheels:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -62,37 +121,23 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       
-      - name: Cache pip dependencies (6 hours)
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
-            ${{ runner.os }}-pip-
-      
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       
-      - name: Cache cargo (6 hours)
+      - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "rust-cache"
-          cache-directories: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
+          shared-key: "rust-cache-wheels"
       
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install maturin pytest
+      - name: Install maturin
+        run: pip install maturin
       
-      - name: Build pyparsing_rs
+      - name: Build wheel
         run: maturin build --release
       
-      - name: Install pyparsing_rs
-        run: pip install $(ls target/wheels/pyparsing_rs*.whl | head -1)
-      
-      - name: Run tests
-        run: pytest tests/ -v
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: target/wheels/*.whl
+          retention-days: 7
