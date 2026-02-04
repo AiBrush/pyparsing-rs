@@ -1,6 +1,8 @@
 # pyparsing-rs
 
-Rust rewrite of Python's `pyparsing` library with PyO3 bindings. **18-24x faster** than original pyparsing.
+[![CI](https://github.com/aibrushcomputer/pyparsing-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/aibrushcomputer/pyparsing-rs/actions)
+
+Rust rewrite of Python's `pyparsing` library with PyO3 bindings. **20-45x faster** than original pyparsing.
 
 ## Installation
 
