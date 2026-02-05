@@ -283,8 +283,10 @@ impl PyLiteral {
                     s.len() >= match_len && s[0] == first && s[..match_len] == *match_bytes;
                 let inner = if matched { matched_ptr } else { empty_ptr };
 
-                // Bulk INCREF: add n to refcount at once
-                (*(inner as *mut pyo3::ffi::PyObject)).ob_refcnt.ob_refcnt += n as isize;
+                // Bulk INCREF: add n to refcount using Py_INCREF
+                for _ in 0..n {
+                    pyo3::ffi::Py_INCREF(inner);
+                }
                 // Fill all slots with memcpy doubling
                 #[repr(C)]
                 struct RawPyList {
@@ -816,7 +818,9 @@ impl PyWord {
                 let ptr = unique_tokens.get_unchecked(i).as_ptr();
                 let c = *counts.get_unchecked(i);
                 if c > 0 {
-                    (*(ptr as *mut pyo3::ffi::PyObject)).ob_refcnt.ob_refcnt += c as isize;
+                    for _ in 0..c {
+                        pyo3::ffi::Py_INCREF(ptr);
+                    }
                 }
             }
             Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked())
@@ -1231,7 +1235,9 @@ impl PyWord {
                         }
                     }
                     if count > 0 {
-                        (*(sptr as *mut pyo3::ffi::PyObject)).ob_refcnt.ob_refcnt += count as isize;
+                        for _ in 0..count {
+                            pyo3::ffi::Py_INCREF(sptr);
+                        }
                     }
                 }
 
@@ -1328,7 +1334,9 @@ impl PyWord {
                 let ptr = _keep_alive.get_unchecked(i).as_ptr();
                 let c = *counts.get_unchecked(i);
                 if c > 0 {
-                    (*(ptr as *mut pyo3::ffi::PyObject)).ob_refcnt.ob_refcnt += c as isize;
+                    for _ in 0..c {
+                        pyo3::ffi::Py_INCREF(ptr);
+                    }
                 }
             }
 
@@ -1664,7 +1672,9 @@ impl PyRegex {
                 let ptr = unique_tokens.get_unchecked(i).as_ptr();
                 let c = *counts.get_unchecked(i);
                 if c > 0 {
-                    (*(ptr as *mut pyo3::ffi::PyObject)).ob_refcnt.ob_refcnt += c as isize;
+                    for _ in 0..c {
+                        pyo3::ffi::Py_INCREF(ptr);
+                    }
                 }
             }
             Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked())
@@ -2184,7 +2194,9 @@ impl PyAnd {
                 let ptr = unique_tokens.get_unchecked(i).as_ptr();
                 let c = *counts.get_unchecked(i);
                 if c > 0 {
-                    (*(ptr as *mut pyo3::ffi::PyObject)).ob_refcnt.ob_refcnt += c as isize;
+                    for _ in 0..c {
+                        pyo3::ffi::Py_INCREF(ptr);
+                    }
                 }
             }
             Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked())
