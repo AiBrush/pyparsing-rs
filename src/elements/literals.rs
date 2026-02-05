@@ -93,19 +93,24 @@ impl ParserElement for Literal {
     /// SIMD-accelerated search using memchr::memmem
     fn search_string(&self, input: &str) -> Vec<ParseResults> {
         let finder = memchr::memmem::Finder::new(&self.match_string);
-        let mut results = Vec::new();
         let input_bytes = input.as_bytes();
+        let match_len = self.match_string.len();
+
+        // Pre-count matches to allocate once
+        let mut count = 0;
         let mut pos = 0;
         while pos < input_bytes.len() {
             match finder.find(&input_bytes[pos..]) {
                 Some(offset) => {
-                    results.push(self.cached_result.clone());
-                    pos += offset + self.match_string.len();
+                    count += 1;
+                    pos += offset + match_len;
                 }
                 None => break,
             }
         }
-        results
+
+        // Fill with clones of the cached result
+        vec![self.cached_result.clone(); count]
     }
 }
 
@@ -175,6 +180,28 @@ impl ParserElement for Keyword {
         }
 
         Ok((end_loc, self.cached_result.clone()))
+    }
+
+    /// Zero-alloc keyword match with word boundary check
+    #[inline(always)]
+    fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
+        let end_loc = loc + self.match_len;
+        let bytes = input.as_bytes();
+        let match_bytes = self.match_string.as_bytes();
+
+        if end_loc > bytes.len()
+            || bytes[loc] != self.first_char
+            || (self.match_len > 1 && bytes[loc + 1..end_loc] != match_bytes[1..])
+        {
+            return None;
+        }
+
+        // Word boundary check
+        if end_loc < bytes.len() && self.ident_chars[bytes[end_loc] as usize] {
+            return None;
+        }
+
+        Some(end_loc)
     }
 
     fn parser_id(&self) -> usize {

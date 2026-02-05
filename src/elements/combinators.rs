@@ -21,6 +21,10 @@ impl And {
         }
     }
 
+    pub fn elements(&self) -> &[Arc<dyn ParserElement>] {
+        &self.elements
+    }
+
     pub fn add_element(&mut self, elem: Arc<dyn ParserElement>) {
         self.elements.push(elem);
         self.name = format!("And({} elements)", self.elements.len());
@@ -100,6 +104,17 @@ impl ParserElement for MatchFirst {
         Err(last_error.unwrap_or_else(|| ParseException::new(loc, "No match found")))
     }
 
+    /// Zero-alloc match — tries each element in order, returns first match
+    #[inline]
+    fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
+        for elem in &self.elements {
+            if let Some(end) = elem.try_match_at(input, loc) {
+                return Some(end);
+            }
+        }
+        None
+    }
+
     fn parser_id(&self) -> usize {
         self.id
     }
@@ -144,6 +159,20 @@ impl ParserElement for Or {
             Some(result) => Ok(result),
             None => Err(ParseException::new(loc, "No match found")),
         }
+    }
+
+    /// Zero-alloc match — tries all elements, returns longest match
+    #[inline]
+    fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
+        let mut best_end: Option<usize> = None;
+        for elem in &self.elements {
+            if let Some(end) = elem.try_match_at(input, loc) {
+                if best_end.is_none() || end > best_end.unwrap() {
+                    best_end = Some(end);
+                }
+            }
+        }
+        best_end
     }
 
     fn parser_id(&self) -> usize {

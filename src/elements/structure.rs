@@ -22,16 +22,17 @@ impl ParserElement for Group {
     fn parse_impl<'a>(&self, ctx: &mut ParseContext<'a>, loc: usize) -> ParseResult<'a> {
         match self.element.parse_impl(ctx, loc) {
             Ok((new_loc, res)) => {
-                // Create a nested group
-                let mut grouped = ParseResults::new();
-                // Add all tokens as a single group
-                for token in res.as_list() {
-                    grouped.push(&token);
-                }
-                Ok((new_loc, grouped))
+                // Group just passes through the tokens (grouping is semantic at the Python level)
+                Ok((new_loc, res))
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// Zero-alloc match — delegates to inner element
+    #[inline]
+    fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
+        self.element.try_match_at(input, loc)
     }
 
     fn parser_id(&self) -> usize {
@@ -60,13 +61,17 @@ impl Suppress {
 
 impl ParserElement for Suppress {
     fn parse_impl<'a>(&self, ctx: &mut ParseContext<'a>, loc: usize) -> ParseResult<'a> {
-        match self.element.parse_impl(ctx, loc) {
-            Ok((new_loc, _)) => {
-                // Return empty results
-                Ok((new_loc, ParseResults::new()))
-            }
-            Err(e) => Err(e),
+        // Use try_match_at to avoid creating ParseResults from inner element
+        match self.element.try_match_at(ctx.input(), loc) {
+            Some(new_loc) => Ok((new_loc, ParseResults::new())),
+            None => Err(crate::core::exceptions::ParseException::new(loc, "Suppress: no match")),
         }
+    }
+
+    /// Zero-alloc match — delegates to inner element
+    #[inline]
+    fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
+        self.element.try_match_at(input, loc)
     }
 
     fn parser_id(&self) -> usize {

@@ -34,6 +34,19 @@ impl ParserElement for ZeroOrMore {
         Ok((loc, results))
     }
 
+    /// Zero-alloc match — chains try_match_at through repetitions
+    #[inline]
+    fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
+        let mut pos = loc;
+        while let Some(end) = self.element.try_match_at(input, pos) {
+            if end == pos {
+                break;
+            }
+            pos = end;
+        }
+        Some(pos)
+    }
+
     fn parser_id(&self) -> usize {
         self.id
     }
@@ -79,6 +92,19 @@ impl ParserElement for OneOrMore {
         }
     }
 
+    /// Zero-alloc match — requires at least one match, then repeats
+    #[inline]
+    fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
+        let mut pos = self.element.try_match_at(input, loc)?;
+        while let Some(end) = self.element.try_match_at(input, pos) {
+            if end == pos {
+                break;
+            }
+            pos = end;
+        }
+        Some(pos)
+    }
+
     fn parser_id(&self) -> usize {
         self.id
     }
@@ -109,6 +135,12 @@ impl ParserElement for Optional {
             Ok(result) => Ok(result),
             Err(_) => Ok((loc, ParseResults::new())),
         }
+    }
+
+    /// Zero-alloc match — returns inner match end or loc (always succeeds)
+    #[inline]
+    fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
+        Some(self.element.try_match_at(input, loc).unwrap_or(loc))
     }
 
     fn parser_id(&self) -> usize {
@@ -152,6 +184,16 @@ impl ParserElement for Exactly {
         }
 
         Ok((loc, results))
+    }
+
+    /// Zero-alloc match — requires exactly N matches
+    #[inline]
+    fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
+        let mut pos = loc;
+        for _ in 0..self.count {
+            pos = self.element.try_match_at(input, pos)?;
+        }
+        Some(pos)
     }
 
     fn parser_id(&self) -> usize {
