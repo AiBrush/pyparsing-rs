@@ -92,6 +92,38 @@ unsafe fn list_all_same(list_ptr: *mut pyo3::ffi::PyObject, n: pyo3::ffi::Py_ssi
     true
 }
 
+/// Build a u64 hash key from a byte slice at `bytes[start..start+word_len]`.
+/// Uses unaligned u64 read when possible for speed, with length XOR for >7 bytes.
+#[inline(always)]
+unsafe fn word_hash_key(bytes: &[u8], start: usize, word_len: usize, buf_len: usize) -> u64 {
+    if word_len <= 7 {
+        if start + 8 <= buf_len {
+            let raw = std::ptr::read_unaligned(bytes.as_ptr().add(start) as *const u64);
+            raw & ((1u64 << (word_len * 8)) - 1)
+        } else {
+            let mut k: u64 = 0;
+            for (j, &wb) in bytes[start..start + word_len].iter().enumerate() {
+                k |= (wb as u64) << (j * 8);
+            }
+            k
+        }
+    } else {
+        let raw = if start + 8 <= buf_len {
+            std::ptr::read_unaligned(bytes.as_ptr().add(start) as *const u64)
+        } else {
+            let mut k: u64 = 0;
+            for (j, &wb) in bytes[start..start + 7.min(buf_len - start)]
+                .iter()
+                .enumerate()
+            {
+                k |= (wb as u64) << (j * 8);
+            }
+            k
+        };
+        raw ^ ((word_len as u64) << 56)
+    }
+}
+
 /// Branchless word count: scan bytes and count word starts using init/body tables.
 #[inline(always)]
 unsafe fn count_words_branchless(
@@ -1282,32 +1314,7 @@ impl PyWord {
 
                 for &(start, end) in &cycle_word_ranges {
                     let word_len = end - start;
-                    let key = if word_len <= 7 {
-                        if start + 8 <= len {
-                            let raw =
-                                std::ptr::read_unaligned(bytes.as_ptr().add(start) as *const u64);
-                            raw & ((1u64 << (word_len * 8)) - 1)
-                        } else {
-                            let mut k: u64 = 0;
-                            for (j, &wb) in bytes[start..end].iter().enumerate() {
-                                k |= (wb as u64) << (j * 8);
-                            }
-                            k
-                        }
-                    } else {
-                        let raw = if start + 8 <= len {
-                            std::ptr::read_unaligned(bytes.as_ptr().add(start) as *const u64)
-                        } else {
-                            let mut k: u64 = 0;
-                            for (j, &wb) in
-                                bytes[start..start + 7.min(len - start)].iter().enumerate()
-                            {
-                                k |= (wb as u64) << (j * 8);
-                            }
-                            k
-                        };
-                        raw ^ ((word_len as u64) << 56)
-                    };
+                    let key = word_hash_key(bytes, start, word_len, len);
 
                     let mut slot = (key as usize ^ (key as usize >> 16)) & 31;
                     loop {
@@ -1352,34 +1359,7 @@ impl PyWord {
                             rpos += 1;
                         }
                         let wlen = rpos - wstart;
-                        let key = if wlen <= 7 {
-                            if wstart + 8 <= len {
-                                let raw = std::ptr::read_unaligned(
-                                    bytes.as_ptr().add(wstart) as *const u64
-                                );
-                                raw & ((1u64 << (wlen * 8)) - 1)
-                            } else {
-                                let mut k: u64 = 0;
-                                for (j, &wb) in bytes[wstart..rpos].iter().enumerate() {
-                                    k |= (wb as u64) << (j * 8);
-                                }
-                                k
-                            }
-                        } else {
-                            let raw = if wstart + 8 <= len {
-                                std::ptr::read_unaligned(bytes.as_ptr().add(wstart) as *const u64)
-                            } else {
-                                let mut k: u64 = 0;
-                                for (j, &wb) in bytes[wstart..wstart + 7.min(len - wstart)]
-                                    .iter()
-                                    .enumerate()
-                                {
-                                    k |= (wb as u64) << (j * 8);
-                                }
-                                k
-                            };
-                            raw ^ ((wlen as u64) << 56)
-                        };
+                        let key = word_hash_key(bytes, wstart, wlen, len);
 
                         let mut slot = (key as usize ^ (key as usize >> 16)) & 31;
                         loop {
@@ -1480,31 +1460,7 @@ impl PyWord {
                 }
                 let word_len = pos - start;
 
-                // Build u64 key via unaligned read + mask
-                let key = if word_len <= 7 {
-                    if start + 8 <= len {
-                        let raw = std::ptr::read_unaligned(bytes.as_ptr().add(start) as *const u64);
-                        raw & ((1u64 << (word_len * 8)) - 1)
-                    } else {
-                        let mut k: u64 = 0;
-                        for (i, &wb) in bytes[start..pos].iter().enumerate() {
-                            k |= (wb as u64) << (i * 8);
-                        }
-                        k
-                    }
-                } else {
-                    let raw = if start + 8 <= len {
-                        std::ptr::read_unaligned(bytes.as_ptr().add(start) as *const u64)
-                    } else {
-                        let mut k: u64 = 0;
-                        for (i, &wb) in bytes[start..start + 7.min(len - start)].iter().enumerate()
-                        {
-                            k |= (wb as u64) << (i * 8);
-                        }
-                        k
-                    };
-                    raw ^ ((word_len as u64) << 56)
-                };
+                let key = word_hash_key(bytes, start, word_len, len);
 
                 // Hash table lookup with linear probing
                 let mut slot = (key as usize ^ (key as usize >> 16)) & HASH_MASK;
