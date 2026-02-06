@@ -513,28 +513,41 @@ fn generic_parse_batch<'py>(
             }
             return Ok(Bound::from_owned_ptr(py, result).downcast_into_unchecked());
         } else {
-            // Mixed path: parse each input individually
+            // Mixed path with last-pointer cache: skip re-parsing duplicate strings
+            let mut last_item: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
+            let mut last_result: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
+
             for i in 0..n {
                 let item = pyo3::ffi::PyList_GET_ITEM(in_ptr, i);
-                let s = py_str_as_str(item);
-                let mut ctx = crate::core::context::ParseContext::new(s);
-                let inner_list = match parser.parse_impl(&mut ctx, 0) {
-                    Ok((_end, results)) => {
-                        let tokens = results.as_vec();
-                        let inner = pyo3::ffi::PyList_New(tokens.len() as pyo3::ffi::Py_ssize_t);
-                        for (j, tok) in tokens.iter().enumerate() {
-                            let py_str = PyString::new(py, tok);
-                            pyo3::ffi::PyList_SET_ITEM(
-                                inner,
-                                j as pyo3::ffi::Py_ssize_t,
-                                py_str.into_ptr(),
-                            );
+
+                if item == last_item && !last_result.is_null() {
+                    // Reuse cached result
+                    pyo3::ffi::Py_INCREF(last_result);
+                    pyo3::ffi::PyList_SET_ITEM(out_ptr, i, last_result);
+                } else {
+                    let s = py_str_as_str(item);
+                    let mut ctx = crate::core::context::ParseContext::new(s);
+                    let inner_list = match parser.parse_impl(&mut ctx, 0) {
+                        Ok((_end, results)) => {
+                            let tokens = results.as_vec();
+                            let inner =
+                                pyo3::ffi::PyList_New(tokens.len() as pyo3::ffi::Py_ssize_t);
+                            for (j, tok) in tokens.iter().enumerate() {
+                                let py_str = PyString::new(py, tok);
+                                pyo3::ffi::PyList_SET_ITEM(
+                                    inner,
+                                    j as pyo3::ffi::Py_ssize_t,
+                                    py_str.into_ptr(),
+                                );
+                            }
+                            inner
                         }
-                        inner
-                    }
-                    Err(_) => pyo3::ffi::PyList_New(0),
-                };
-                pyo3::ffi::PyList_SET_ITEM(out_ptr, i, inner_list);
+                        Err(_) => pyo3::ffi::PyList_New(0),
+                    };
+                    last_item = item;
+                    last_result = inner_list;
+                    pyo3::ffi::PyList_SET_ITEM(out_ptr, i, inner_list);
+                }
             }
         }
 
@@ -1605,8 +1618,8 @@ impl PyRegex {
 
     /// Search string — find_iter + raw FFI PyList construction with dedup
     fn search_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
-        let mut items: Vec<*mut pyo3::ffi::PyObject> = Vec::new();
-        let mut _keep_alive: Vec<Bound<'py, PyString>> = Vec::new();
+        let mut items: Vec<*mut pyo3::ffi::PyObject> = Vec::with_capacity(64);
+        let mut _keep_alive: Vec<Bound<'py, PyString>> = Vec::with_capacity(32);
         let mut dedup: FxHashMap<&str, *mut pyo3::ffi::PyObject> = FxHashMap::default();
 
         for m in self.inner.find_iter(s) {
