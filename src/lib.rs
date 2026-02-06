@@ -124,6 +124,31 @@ unsafe fn word_hash_key(bytes: &[u8], start: usize, word_len: usize, buf_len: us
     }
 }
 
+/// Detect repeating period in a byte slice using SIMD-accelerated memchr.
+/// Returns the period P if bytes[0..P] == bytes[P..2P], else 0.
+#[inline]
+unsafe fn detect_text_period(bytes: &[u8], len: usize) -> usize {
+    if len < 4 {
+        return 0;
+    }
+    let first_byte = *bytes.get_unchecked(0);
+    let max_search = len.min(1025);
+    let mut search_from = 0usize;
+    while search_from + 1 < max_search {
+        match memchr::memchr(first_byte, &bytes[search_from + 1..max_search]) {
+            Some(offset) => {
+                let p = search_from + offset + 1;
+                if len >= p * 2 && bytes[..p] == bytes[p..p * 2] {
+                    return p;
+                }
+                search_from = p;
+            }
+            None => break,
+        }
+    }
+    0
+}
+
 /// Branchless word count: scan bytes and count word starts using init/body tables.
 #[inline(always)]
 unsafe fn count_words_branchless(
@@ -1180,26 +1205,9 @@ impl PyWord {
 
         // Cycle detection: if text has repeating period P, count in one cycle × reps
         unsafe {
-            let first_byte = *bytes.get_unchecked(0);
-            let max_search = len.min(1025);
-            let mut period = 0usize;
-
-            // Find smallest period P where bytes[0..P] == bytes[P..2P]
-            let mut search_from = 0usize;
-            loop {
-                if let Some(pos) = memchr::memchr(first_byte, &bytes[search_from + 1..max_search]) {
-                    let p = search_from + 1 + pos;
-                    if p * 2 <= len && bytes[..p] == bytes[p..p * 2] {
-                        period = p;
-                        break;
-                    }
-                    search_from = p;
-                } else {
-                    break;
-                }
-            }
-
+            let period = detect_text_period(bytes, len);
             if period > 0 {
+                let first_byte = *bytes.get_unchecked(0);
                 // Verify no word spans the cycle boundary:
                 // The last byte of cycle must NOT be a body char, OR the first byte of next cycle must NOT be init/body
                 let last_of_cycle = *bytes.get_unchecked(period - 1);
@@ -1245,32 +1253,8 @@ impl PyWord {
 
         unsafe {
             // --- Text repetition fast path ---
-            // If the input text has a small repeating period, scan one cycle
-            // and replicate the output via memcpy doubling on the PyList's internal array.
             'cycle: {
-                if len < 4 {
-                    break 'cycle;
-                }
-
-                // Find smallest period P where text[0..P] == text[P..2P]
-                // Uses memchr to find candidate positions (SIMD-accelerated)
-                let first_byte = *bytes.get_unchecked(0);
-                let max_search = len.min(1025);
-                let mut period = 0usize;
-                let mut search_from = 0usize;
-                while search_from + 1 < max_search {
-                    match memchr::memchr(first_byte, &bytes[search_from + 1..max_search]) {
-                        Some(offset) => {
-                            let p = search_from + offset + 1;
-                            if len >= p * 2 && bytes[..p] == bytes[p..p * 2] {
-                                period = p;
-                                break;
-                            }
-                            search_from = p;
-                        }
-                        None => break,
-                    }
-                }
+                let period = detect_text_period(bytes, len);
                 if period == 0 {
                     break 'cycle;
                 }
