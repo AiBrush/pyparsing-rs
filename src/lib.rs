@@ -92,6 +92,28 @@ unsafe fn list_all_same(list_ptr: *mut pyo3::ffi::PyObject, n: pyo3::ffi::Py_ssi
     true
 }
 
+/// Branchless word count: scan bytes and count word starts using init/body tables.
+#[inline(always)]
+unsafe fn count_words_branchless(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    is_init: &[u8; 256],
+    is_body: &[u8; 256],
+) -> usize {
+    let mut count = 0usize;
+    let mut in_word = 0u8;
+    for i in start..end {
+        let b = *bytes.get_unchecked(i);
+        let cur_init = *is_init.get_unchecked(b as usize);
+        let cur_body = *is_body.get_unchecked(b as usize);
+        let starts = cur_init & !in_word;
+        count += starts as usize;
+        in_word = cur_body & (starts | in_word);
+    }
+    count
+}
+
 /// Fill a pointer array using memcpy doubling from a seed of `seed_len` elements
 /// already written at the start of `ob_item`, up to `total_len` elements.
 #[inline(always)]
@@ -1156,54 +1178,18 @@ impl PyWord {
                     last_is_body != 0 && (first_is_init != 0 || first_is_body != 0);
 
                 if !word_spans_boundary {
-                    // Count words in one cycle
-                    let mut cycle_count = 0usize;
-                    let mut in_word = 0u8;
-                    for i in 0..period {
-                        let b = *bytes.get_unchecked(i);
-                        let cur_init = *is_init.get_unchecked(b as usize);
-                        let cur_body = *is_body.get_unchecked(b as usize);
-                        let starts = cur_init & !in_word;
-                        cycle_count += starts as usize;
-                        in_word = cur_body & (starts | in_word);
-                    }
-
+                    let cycle_count = count_words_branchless(bytes, 0, period, &is_init, &is_body);
                     let full_cycles = len / period;
-                    let remainder = len % period;
-                    let mut total = cycle_count * full_cycles;
-
-                    // Count words in remainder
                     let rem_start = full_cycles * period;
-                    let mut in_word = 0u8;
-                    for i in rem_start..len {
-                        let b = *bytes.get_unchecked(i);
-                        let cur_init = *is_init.get_unchecked(b as usize);
-                        let cur_body = *is_body.get_unchecked(b as usize);
-                        let starts = cur_init & !in_word;
-                        total += starts as usize;
-                        in_word = cur_body & (starts | in_word);
-                    }
-                    let _ = remainder;
-
+                    let total = cycle_count * full_cycles
+                        + count_words_branchless(bytes, rem_start, len, &is_init, &is_body);
                     return total;
                 }
             }
         }
 
         // Fallback: full branchless scan
-        let mut count = 0usize;
-        let mut in_word = 0u8;
-        unsafe {
-            for i in 0..len {
-                let b = *bytes.get_unchecked(i);
-                let cur_init = *is_init.get_unchecked(b as usize);
-                let cur_body = *is_body.get_unchecked(b as usize);
-                let starts = cur_init & !in_word;
-                count += starts as usize;
-                in_word = cur_body & (starts | in_word);
-            }
-        }
-        count
+        unsafe { count_words_branchless(bytes, 0, len, &is_init, &is_body) }
     }
 
     /// Zero-allocation match check via try_match_at
