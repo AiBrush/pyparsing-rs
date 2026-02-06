@@ -10,12 +10,6 @@ pub trait ParserElement: Send + Sync {
     /// Attempt to parse at the given location
     fn parse_impl<'a>(&self, ctx: &mut ParseContext<'a>, loc: usize) -> ParseResult<'a>;
 
-    /// Get a unique identifier for memoization
-    fn parser_id(&self) -> usize;
-
-    /// Human-readable name for error messages
-    fn name(&self) -> &str;
-
     /// Zero-alloc match check — returns end position without creating ParseResults.
     /// Override this for maximum performance on match-only operations.
     fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
@@ -60,10 +54,3 @@ pub trait ParserElement: Send + Sync {
     }
 }
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-static PARSER_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
-
-pub fn next_parser_id() -> usize {
-    PARSER_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
-}

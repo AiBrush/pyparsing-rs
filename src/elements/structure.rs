@@ -1,20 +1,16 @@
 use crate::core::context::ParseContext;
-use crate::core::parser::{next_parser_id, ParseResult, ParserElement};
+use crate::core::parser::{ParseResult, ParserElement};
 use crate::core::results::ParseResults;
 use std::sync::Arc;
 
 /// Group - wraps results in a nested structure
 pub struct Group {
-    id: usize,
     element: Arc<dyn ParserElement>,
 }
 
 impl Group {
     pub fn new(element: Arc<dyn ParserElement>) -> Self {
-        Self {
-            id: next_parser_id(),
-            element,
-        }
+        Self { element }
     }
 }
 
@@ -34,28 +30,16 @@ impl ParserElement for Group {
     fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
         self.element.try_match_at(input, loc)
     }
-
-    fn parser_id(&self) -> usize {
-        self.id
-    }
-
-    fn name(&self) -> &str {
-        "Group"
-    }
 }
 
 /// Suppress - matches but doesn't add to results
 pub struct Suppress {
-    id: usize,
     element: Arc<dyn ParserElement>,
 }
 
 impl Suppress {
     pub fn new(element: Arc<dyn ParserElement>) -> Self {
-        Self {
-            id: next_parser_id(),
-            element,
-        }
+        Self { element }
     }
 }
 
@@ -75,13 +59,5 @@ impl ParserElement for Suppress {
     #[inline]
     fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
         self.element.try_match_at(input, loc)
-    }
-
-    fn parser_id(&self) -> usize {
-        self.id
-    }
-
-    fn name(&self) -> &str {
-        "Suppress"
     }
 }

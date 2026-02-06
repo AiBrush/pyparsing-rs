@@ -1,21 +1,17 @@
 use crate::core::context::ParseContext;
 use crate::core::exceptions::ParseException;
-use crate::core::parser::{next_parser_id, ParseResult, ParserElement};
+use crate::core::parser::{ParseResult, ParserElement};
 use crate::core::results::ParseResults;
 use std::sync::Arc;
 
 /// ZeroOrMore - matches 0 or more repetitions
 pub struct ZeroOrMore {
-    id: usize,
     element: Arc<dyn ParserElement>,
 }
 
 impl ZeroOrMore {
     pub fn new(element: Arc<dyn ParserElement>) -> Self {
-        Self {
-            id: next_parser_id(),
-            element,
-        }
+        Self { element }
     }
 }
 
@@ -46,28 +42,16 @@ impl ParserElement for ZeroOrMore {
         }
         Some(pos)
     }
-
-    fn parser_id(&self) -> usize {
-        self.id
-    }
-
-    fn name(&self) -> &str {
-        "ZeroOrMore"
-    }
 }
 
 /// OneOrMore - matches 1 or more repetitions
 pub struct OneOrMore {
-    id: usize,
     element: Arc<dyn ParserElement>,
 }
 
 impl OneOrMore {
     pub fn new(element: Arc<dyn ParserElement>) -> Self {
-        Self {
-            id: next_parser_id(),
-            element,
-        }
+        Self { element }
     }
 }
 
@@ -104,28 +88,16 @@ impl ParserElement for OneOrMore {
         }
         Some(pos)
     }
-
-    fn parser_id(&self) -> usize {
-        self.id
-    }
-
-    fn name(&self) -> &str {
-        "OneOrMore"
-    }
 }
 
 /// Optional - matches 0 or 1 times
 pub struct Optional {
-    id: usize,
     element: Arc<dyn ParserElement>,
 }
 
 impl Optional {
     pub fn new(element: Arc<dyn ParserElement>) -> Self {
-        Self {
-            id: next_parser_id(),
-            element,
-        }
+        Self { element }
     }
 }
 
@@ -141,66 +113,5 @@ impl ParserElement for Optional {
     #[inline]
     fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
         Some(self.element.try_match_at(input, loc).unwrap_or(loc))
-    }
-
-    fn parser_id(&self) -> usize {
-        self.id
-    }
-
-    fn name(&self) -> &str {
-        "Optional"
-    }
-}
-
-/// Exact repetition - matches exactly n times
-pub struct Exactly {
-    id: usize,
-    element: Arc<dyn ParserElement>,
-    count: usize,
-}
-
-impl Exactly {
-    pub fn new(element: Arc<dyn ParserElement>, count: usize) -> Self {
-        Self {
-            id: next_parser_id(),
-            element,
-            count,
-        }
-    }
-}
-
-impl ParserElement for Exactly {
-    fn parse_impl<'a>(&self, ctx: &mut ParseContext<'a>, mut loc: usize) -> ParseResult<'a> {
-        let mut results = ParseResults::new();
-
-        for _ in 0..self.count {
-            match self.element.parse_impl(ctx, loc) {
-                Ok((new_loc, res)) => {
-                    results.extend(res);
-                    loc = new_loc;
-                }
-                Err(e) => return Err(e),
-            }
-        }
-
-        Ok((loc, results))
-    }
-
-    /// Zero-alloc match — requires exactly N matches
-    #[inline]
-    fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
-        let mut pos = loc;
-        for _ in 0..self.count {
-            pos = self.element.try_match_at(input, pos)?;
-        }
-        Some(pos)
-    }
-
-    fn parser_id(&self) -> usize {
-        self.id
-    }
-
-    fn name(&self) -> &str {
-        "Exactly"
     }
 }

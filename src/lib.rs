@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+
 #![allow(clippy::unnecessary_cast)]
 #![allow(clippy::nonminimal_bool)]
 #![allow(clippy::while_let_loop)]

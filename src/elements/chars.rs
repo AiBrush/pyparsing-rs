@@ -1,6 +1,6 @@
 use crate::core::context::ParseContext;
 use crate::core::exceptions::ParseException;
-use crate::core::parser::{next_parser_id, ParseResult, ParserElement};
+use crate::core::parser::{ParseResult, ParserElement};
 use crate::core::results::ParseResults;
 use std::sync::Arc;
 
@@ -40,12 +40,10 @@ impl CharSet {
 
 /// Match a word made up of characters from specified set
 pub struct Word {
-    id: usize,
     init_chars: CharSet,
     body_chars: CharSet,
     min_len: usize,
     max_len: usize,
-    name: String,
     error_msg: Arc<str>,
 }
 
@@ -56,12 +54,10 @@ impl Word {
         let error_msg: Arc<str> = format!("Expected {}", name).into();
 
         Self {
-            id: next_parser_id(),
             init_chars: charset.clone(),
             body_chars: charset,
             min_len: 1,
             max_len: 0, // 0 means unlimited
-            name,
             error_msg,
         }
     }
@@ -168,10 +164,6 @@ impl ParserElement for Word {
         Some(end)
     }
 
-    fn parser_id(&self) -> usize {
-        self.id
-    }
-
     /// Optimized search: scan bytes directly without ParseContext overhead
     fn search_string(&self, input: &str) -> Vec<ParseResults> {
         let bytes = input.as_bytes();
@@ -230,10 +222,6 @@ impl ParserElement for Word {
         }
         results
     }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
 }
 
 /// Fast-path category for common regex patterns
@@ -278,11 +266,9 @@ fn detect_fast_path(pattern: &str) -> FastPath {
 
 /// Match using a regular expression
 pub struct RegexMatch {
-    id: usize,
     pattern: regex::Regex,
     /// Unanchored version for search_string / find_iter operations
     search_pattern: regex::Regex,
-    pattern_str: String,
     error_msg: Arc<str>,
     fast_path: FastPath,
 }
@@ -301,10 +287,8 @@ impl RegexMatch {
         let fast_path = detect_fast_path(pattern);
 
         Ok(Self {
-            id: next_parser_id(),
             pattern: regex::Regex::new(&anchored)?,
             search_pattern: regex::Regex::new(&unanchored)?,
-            pattern_str: pattern.to_string(),
             error_msg,
             fast_path,
         })
@@ -367,13 +351,5 @@ impl ParserElement for RegexMatch {
             .find_iter(input)
             .map(|m| ParseResults::from_single(m.as_str()))
             .collect()
-    }
-
-    fn parser_id(&self) -> usize {
-        self.id
-    }
-
-    fn name(&self) -> &str {
-        &self.pattern_str
     }
 }

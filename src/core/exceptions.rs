@@ -23,30 +23,3 @@ impl fmt::Display for ParseException {
 }
 
 impl std::error::Error for ParseException {}
-
-#[derive(Debug, Clone)]
-pub struct ParseFatalException {
-    pub loc: usize,
-    pub msg: Arc<str>,
-}
-
-impl ParseFatalException {
-    pub fn new(loc: usize, msg: impl Into<Arc<str>>) -> Self {
-        Self {
-            loc,
-            msg: msg.into(),
-        }
-    }
-}
-
-impl fmt::Display for ParseFatalException {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "ParseFatalException at position {}: {}",
-            self.loc, self.msg
-        )
-    }
-}
-
-impl std::error::Error for ParseFatalException {}

@@ -1,12 +1,11 @@
 use crate::core::context::ParseContext;
 use crate::core::exceptions::ParseException;
-use crate::core::parser::{next_parser_id, ParseResult, ParserElement};
+use crate::core::parser::{ParseResult, ParserElement};
 use crate::core::results::ParseResults;
 use std::sync::Arc;
 
 /// Match an exact literal string
 pub struct Literal {
-    id: usize,
     match_string: String,
     first_char: u8,
     error_msg: Arc<str>,
@@ -19,7 +18,6 @@ impl Literal {
         let error_msg: Arc<str> = format!("Expected '{}'", s).into();
         let cached_result = ParseResults::from_single(s);
         Self {
-            id: next_parser_id(),
             match_string: s.to_string(),
             first_char,
             error_msg,
@@ -82,14 +80,6 @@ impl ParserElement for Literal {
         }
     }
 
-    fn parser_id(&self) -> usize {
-        self.id
-    }
-
-    fn name(&self) -> &str {
-        &self.match_string
-    }
-
     /// SIMD-accelerated search using memchr::memmem
     fn search_string(&self, input: &str) -> Vec<ParseResults> {
         let finder = memchr::memmem::Finder::new(&self.match_string);
@@ -116,7 +106,6 @@ impl ParserElement for Literal {
 
 /// Match a keyword (literal with word boundary checking)
 pub struct Keyword {
-    id: usize,
     match_string: String,
     match_len: usize,
     first_char: u8,
@@ -137,7 +126,6 @@ impl Keyword {
         let cached_result = ParseResults::from_single(s);
 
         Self {
-            id: next_parser_id(),
             match_string: s.to_string(),
             match_len: s.len(),
             first_char,
@@ -202,13 +190,5 @@ impl ParserElement for Keyword {
         }
 
         Some(end_loc)
-    }
-
-    fn parser_id(&self) -> usize {
-        self.id
-    }
-
-    fn name(&self) -> &str {
-        &self.match_string
     }
 }
