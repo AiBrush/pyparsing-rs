@@ -163,65 +163,6 @@ impl ParserElement for Word {
         }
         Some(end)
     }
-
-    /// Optimized search: scan bytes directly without ParseContext overhead
-    fn search_string(&self, input: &str) -> Vec<ParseResults> {
-        let bytes = input.as_bytes();
-        let len = bytes.len();
-        let mut results = Vec::new();
-        let mut pos = 0;
-
-        while pos < len {
-            let b = bytes[pos];
-            if b < 128 && self.init_chars.contains(b) {
-                let start = pos;
-                pos += 1;
-                while pos < len {
-                    let b2 = bytes[pos];
-                    if b2 < 128 {
-                        if !self.body_chars.contains(b2) {
-                            break;
-                        }
-                        pos += 1;
-                    } else {
-                        let c = input[pos..].chars().next().unwrap();
-                        if !self.body_chars.contains_char(c) {
-                            break;
-                        }
-                        pos += c.len_utf8();
-                    }
-                }
-                results.push(ParseResults::from_single(&input[start..pos]));
-            } else if b >= 128 {
-                let c = input[pos..].chars().next().unwrap();
-                if self.init_chars.contains_char(c) {
-                    let start = pos;
-                    pos += c.len_utf8();
-                    while pos < len {
-                        let b2 = bytes[pos];
-                        if b2 < 128 {
-                            if !self.body_chars.contains(b2) {
-                                break;
-                            }
-                            pos += 1;
-                        } else {
-                            let c2 = input[pos..].chars().next().unwrap();
-                            if !self.body_chars.contains_char(c2) {
-                                break;
-                            }
-                            pos += c2.len_utf8();
-                        }
-                    }
-                    results.push(ParseResults::from_single(&input[start..pos]));
-                } else {
-                    pos += c.len_utf8();
-                }
-            } else {
-                pos += 1;
-            }
-        }
-        results
-    }
 }
 
 /// Fast-path category for common regex patterns
@@ -343,13 +284,5 @@ impl ParserElement for RegexMatch {
             }
             FastPath::None => self.pattern.find(&input[loc..]).map(|m| loc + m.end()),
         }
-    }
-
-    /// Optimized search using the unanchored search_pattern
-    fn search_string(&self, input: &str) -> Vec<ParseResults> {
-        self.search_pattern
-            .find_iter(input)
-            .map(|m| ParseResults::from_single(m.as_str()))
-            .collect()
     }
 }

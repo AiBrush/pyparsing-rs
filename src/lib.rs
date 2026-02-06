@@ -127,17 +127,24 @@ fn generic_search_string_count(parser: &dyn ParserElement, s: &str) -> usize {
     count
 }
 
-/// Generic search_string: find all matches and return as flat PyList of strings
+/// Generic search_string: scan with try_match_at and create PyStrings directly
+/// from the input slice, avoiding intermediate Rust String allocations.
 fn generic_search_string<'py>(
     py: Python<'py>,
     parser: &dyn ParserElement,
     s: &str,
 ) -> PyResult<Bound<'py, PyList>> {
-    let results = parser.search_string(s);
     let list = PyList::empty(py);
-    for res in results {
-        for tok in res.as_vec() {
-            list.append(PyString::new(py, tok))?;
+    let mut loc = 0;
+    while loc < s.len() {
+        if let Some(end) = parser.try_match_at(s, loc) {
+            let matched = &s[loc..end];
+            if !matched.is_empty() {
+                list.append(PyString::new(py, matched))?;
+            }
+            loc = if end > loc { end } else { loc + 1 };
+        } else {
+            loc += 1;
         }
     }
     Ok(list)
