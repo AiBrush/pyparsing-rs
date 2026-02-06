@@ -58,6 +58,25 @@ impl ParserElement for And {
         Some(pos)
     }
 
+    /// Optimized search: use try_match_at pre-filter, then parse_impl for results
+    fn search_string(&self, input: &str) -> Vec<ParseResults> {
+        let mut ctx = ParseContext::new(input);
+        let mut results = Vec::new();
+        let mut loc = 0;
+
+        while loc < input.len() {
+            if self.try_match_at(input, loc).is_some() {
+                if let Ok((end_loc, res)) = self.parse_impl(&mut ctx, loc) {
+                    results.push(res);
+                    loc = end_loc;
+                    continue;
+                }
+            }
+            loc += 1;
+        }
+        results
+    }
+
     fn parser_id(&self) -> usize {
         self.id
     }
@@ -117,6 +136,25 @@ impl ParserElement for MatchFirst {
             }
         }
         None
+    }
+
+    /// Optimized search: use try_match_at pre-filter, then parse_impl for results
+    fn search_string(&self, input: &str) -> Vec<ParseResults> {
+        let mut ctx = ParseContext::new(input);
+        let mut results = Vec::new();
+        let mut loc = 0;
+
+        while loc < input.len() {
+            if self.try_match_at(input, loc).is_some() {
+                if let Ok((end_loc, res)) = self.parse_impl(&mut ctx, loc) {
+                    results.push(res);
+                    loc = end_loc;
+                    continue;
+                }
+            }
+            loc += 1;
+        }
+        results
     }
 
     fn parser_id(&self) -> usize {

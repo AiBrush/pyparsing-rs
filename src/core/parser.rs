@@ -30,21 +30,30 @@ pub trait ParserElement: Send + Sync {
         Ok(results)
     }
 
-    /// Search for matches in a string
+    /// Search for matches in a string.
+    /// Default uses try_match_at as pre-filter to avoid parse_impl allocations at
+    /// non-matching positions.
     fn search_string(&self, input: &str) -> Vec<ParseResults> {
         let mut ctx = ParseContext::new(input);
         let mut results = Vec::new();
         let mut loc = 0;
 
         while loc < input.len() {
-            match self.parse_impl(&mut ctx, loc) {
-                Ok((end_loc, res)) => {
-                    results.push(res);
-                    loc = end_loc;
+            // Fast pre-check: does any match start here?
+            if let Some(end) = self.try_match_at(input, loc) {
+                // Full parse to get token breakdown
+                match self.parse_impl(&mut ctx, loc) {
+                    Ok((end_loc, res)) => {
+                        results.push(res);
+                        loc = end_loc;
+                    }
+                    Err(_) => {
+                        // try_match_at agreed but parse_impl disagreed (rare)
+                        loc = end.max(loc + 1);
+                    }
                 }
-                Err(_) => {
-                    loc += 1;
-                }
+            } else {
+                loc += 1;
             }
         }
         results
