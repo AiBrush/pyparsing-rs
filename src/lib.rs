@@ -2278,240 +2278,56 @@ impl PyMatchFirst {
     }
 }
 
-#[pymethods]
-impl PyZeroOrMore {
-    #[new]
-    fn new(expr: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let inner = extract_parser(expr)?;
-        Ok(Self {
-            inner: Arc::new(RustZeroOrMore::new(inner)),
-        })
-    }
-
-    fn parse_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
-        generic_parse_string(py, self.inner.as_ref(), s)
-    }
-
-    fn matches(&self, s: &str) -> bool {
-        self.inner.try_match_at(s, 0).is_some()
-    }
-
-    fn search_string_count(&self, s: &str) -> usize {
-        generic_search_string_count(self.inner.as_ref(), s)
-    }
-
-    fn search_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
-        generic_search_string(py, self.inner.as_ref(), s)
-    }
-
-    fn parse_batch_count(&self, inputs: &Bound<'_, PyList>) -> PyResult<usize> {
-        generic_parse_batch_count(self.inner.as_ref(), inputs)
-    }
-
-    fn parse_batch<'py>(
-        &self,
-        py: Python<'py>,
-        inputs: &Bound<'py, PyList>,
-    ) -> PyResult<Bound<'py, PyList>> {
-        generic_parse_batch(py, self.inner.as_ref(), inputs)
-    }
-
-    fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyAnd> {
-        make_and(self.inner.clone(), other)
-    }
-
-    fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
-        make_or(self.inner.clone(), other)
-    }
+/// Generate a complete `#[pymethods]` impl for thin wrapper parser types.
+/// These types delegate all methods to generic helpers.
+macro_rules! impl_thin_parser_wrapper {
+    ($py_type:ident, $rust_type:ident) => {
+        #[pymethods]
+        impl $py_type {
+            #[new]
+            fn new(expr: &Bound<'_, PyAny>) -> PyResult<Self> {
+                let inner = extract_parser(expr)?;
+                Ok(Self {
+                    inner: Arc::new($rust_type::new(inner)),
+                })
+            }
+            fn parse_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
+                generic_parse_string(py, self.inner.as_ref(), s)
+            }
+            fn matches(&self, s: &str) -> bool {
+                self.inner.try_match_at(s, 0).is_some()
+            }
+            fn search_string_count(&self, s: &str) -> usize {
+                generic_search_string_count(self.inner.as_ref(), s)
+            }
+            fn search_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
+                generic_search_string(py, self.inner.as_ref(), s)
+            }
+            fn parse_batch_count(&self, inputs: &Bound<'_, PyList>) -> PyResult<usize> {
+                generic_parse_batch_count(self.inner.as_ref(), inputs)
+            }
+            fn parse_batch<'py>(
+                &self,
+                py: Python<'py>,
+                inputs: &Bound<'py, PyList>,
+            ) -> PyResult<Bound<'py, PyList>> {
+                generic_parse_batch(py, self.inner.as_ref(), inputs)
+            }
+            fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyAnd> {
+                make_and(self.inner.clone(), other)
+            }
+            fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
+                make_or(self.inner.clone(), other)
+            }
+        }
+    };
 }
 
-#[pymethods]
-impl PyOneOrMore {
-    #[new]
-    fn new(expr: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let inner = extract_parser(expr)?;
-        Ok(Self {
-            inner: Arc::new(RustOneOrMore::new(inner)),
-        })
-    }
-
-    fn parse_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
-        generic_parse_string(py, self.inner.as_ref(), s)
-    }
-
-    fn matches(&self, s: &str) -> bool {
-        self.inner.try_match_at(s, 0).is_some()
-    }
-
-    fn search_string_count(&self, s: &str) -> usize {
-        generic_search_string_count(self.inner.as_ref(), s)
-    }
-
-    fn search_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
-        generic_search_string(py, self.inner.as_ref(), s)
-    }
-
-    fn parse_batch_count(&self, inputs: &Bound<'_, PyList>) -> PyResult<usize> {
-        generic_parse_batch_count(self.inner.as_ref(), inputs)
-    }
-
-    fn parse_batch<'py>(
-        &self,
-        py: Python<'py>,
-        inputs: &Bound<'py, PyList>,
-    ) -> PyResult<Bound<'py, PyList>> {
-        generic_parse_batch(py, self.inner.as_ref(), inputs)
-    }
-
-    fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyAnd> {
-        make_and(self.inner.clone(), other)
-    }
-
-    fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
-        make_or(self.inner.clone(), other)
-    }
-}
-
-#[pymethods]
-impl PyOptional {
-    #[new]
-    fn new(expr: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let inner = extract_parser(expr)?;
-        Ok(Self {
-            inner: Arc::new(RustOptional::new(inner)),
-        })
-    }
-
-    fn parse_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
-        generic_parse_string(py, self.inner.as_ref(), s)
-    }
-
-    fn matches(&self, s: &str) -> bool {
-        self.inner.try_match_at(s, 0).is_some()
-    }
-
-    fn search_string_count(&self, s: &str) -> usize {
-        generic_search_string_count(self.inner.as_ref(), s)
-    }
-
-    fn search_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
-        generic_search_string(py, self.inner.as_ref(), s)
-    }
-
-    fn parse_batch_count(&self, inputs: &Bound<'_, PyList>) -> PyResult<usize> {
-        generic_parse_batch_count(self.inner.as_ref(), inputs)
-    }
-
-    fn parse_batch<'py>(
-        &self,
-        py: Python<'py>,
-        inputs: &Bound<'py, PyList>,
-    ) -> PyResult<Bound<'py, PyList>> {
-        generic_parse_batch(py, self.inner.as_ref(), inputs)
-    }
-
-    fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyAnd> {
-        make_and(self.inner.clone(), other)
-    }
-
-    fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
-        make_or(self.inner.clone(), other)
-    }
-}
-
-#[pymethods]
-impl PyGroup {
-    #[new]
-    fn new(expr: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let inner = extract_parser(expr)?;
-        Ok(Self {
-            inner: Arc::new(RustGroup::new(inner)),
-        })
-    }
-
-    fn parse_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
-        generic_parse_string(py, self.inner.as_ref(), s)
-    }
-
-    fn matches(&self, s: &str) -> bool {
-        self.inner.try_match_at(s, 0).is_some()
-    }
-
-    fn search_string_count(&self, s: &str) -> usize {
-        generic_search_string_count(self.inner.as_ref(), s)
-    }
-
-    fn search_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
-        generic_search_string(py, self.inner.as_ref(), s)
-    }
-
-    fn parse_batch_count(&self, inputs: &Bound<'_, PyList>) -> PyResult<usize> {
-        generic_parse_batch_count(self.inner.as_ref(), inputs)
-    }
-
-    fn parse_batch<'py>(
-        &self,
-        py: Python<'py>,
-        inputs: &Bound<'py, PyList>,
-    ) -> PyResult<Bound<'py, PyList>> {
-        generic_parse_batch(py, self.inner.as_ref(), inputs)
-    }
-
-    fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyAnd> {
-        make_and(self.inner.clone(), other)
-    }
-
-    fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
-        make_or(self.inner.clone(), other)
-    }
-}
-
-#[pymethods]
-impl PySuppress {
-    #[new]
-    fn new(expr: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let inner = extract_parser(expr)?;
-        Ok(Self {
-            inner: Arc::new(RustSuppress::new(inner)),
-        })
-    }
-
-    fn parse_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
-        generic_parse_string(py, self.inner.as_ref(), s)
-    }
-
-    fn matches(&self, s: &str) -> bool {
-        self.inner.try_match_at(s, 0).is_some()
-    }
-
-    fn search_string_count(&self, s: &str) -> usize {
-        generic_search_string_count(self.inner.as_ref(), s)
-    }
-
-    fn search_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
-        generic_search_string(py, self.inner.as_ref(), s)
-    }
-
-    fn parse_batch_count(&self, inputs: &Bound<'_, PyList>) -> PyResult<usize> {
-        generic_parse_batch_count(self.inner.as_ref(), inputs)
-    }
-
-    fn parse_batch<'py>(
-        &self,
-        py: Python<'py>,
-        inputs: &Bound<'py, PyList>,
-    ) -> PyResult<Bound<'py, PyList>> {
-        generic_parse_batch(py, self.inner.as_ref(), inputs)
-    }
-
-    fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyAnd> {
-        make_and(self.inner.clone(), other)
-    }
-
-    fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
-        make_or(self.inner.clone(), other)
-    }
-}
+impl_thin_parser_wrapper!(PyZeroOrMore, RustZeroOrMore);
+impl_thin_parser_wrapper!(PyOneOrMore, RustOneOrMore);
+impl_thin_parser_wrapper!(PyOptional, RustOptional);
+impl_thin_parser_wrapper!(PyGroup, RustGroup);
+impl_thin_parser_wrapper!(PySuppress, RustSuppress);
 
 // Character set constants
 #[pyfunction]
