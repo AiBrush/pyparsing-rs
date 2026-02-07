@@ -2276,6 +2276,68 @@ impl PyAnd {
                 return Ok(PyList::empty(py));
             }
 
+            // Uniform path: all items same pointer → parse once, repeat via PySequence_Repeat
+            if list_all_same(in_ptr, n) {
+                let item = pyo3::ffi::PyList_GET_ITEM(in_ptr, 0);
+                let s = py_str_as_str(item);
+                // Parse with try_match_at to get tokens
+                let mut tokens: Vec<*mut pyo3::ffi::PyObject> = Vec::with_capacity(elem_count);
+                let mut pos = 0usize;
+                let mut matched_all = true;
+                for elem in elements {
+                    match elem.try_match_at(s, pos) {
+                        Some(end) => {
+                            let sub = &s[pos..end];
+                            if !sub.is_empty() {
+                                tokens.push(PyString::new(py, sub).into_ptr());
+                            }
+                            pos = end;
+                        }
+                        None => {
+                            for &ptr in &tokens {
+                                pyo3::ffi::Py_DECREF(ptr);
+                            }
+                            matched_all = false;
+                            break;
+                        }
+                    }
+                }
+                if matched_all && !tokens.is_empty() {
+                    let template = pyo3::ffi::PyList_New(tokens.len() as pyo3::ffi::Py_ssize_t);
+                    if template.is_null() {
+                        for &ptr in &tokens {
+                            pyo3::ffi::Py_DECREF(ptr);
+                        }
+                        return Err(pyo3::PyErr::fetch(py));
+                    }
+                    for (j, &ptr) in tokens.iter().enumerate() {
+                        pyo3::ffi::PyList_SET_ITEM(template, j as pyo3::ffi::Py_ssize_t, ptr);
+                    }
+                    pyo3::ffi::Py_INCREF(template);
+                    let wrapper = pyo3::ffi::PyList_New(1);
+                    pyo3::ffi::PyList_SET_ITEM(wrapper, 0, template);
+                    let result = pyo3::ffi::PySequence_Repeat(wrapper, n);
+                    pyo3::ffi::Py_DECREF(wrapper);
+                    if result.is_null() {
+                        return Err(pyo3::PyErr::fetch(py));
+                    }
+                    return Ok(Bound::from_owned_ptr(py, result).downcast_into_unchecked());
+                }
+                // Matched but empty tokens or didn't match — fall through to empty lists
+                if !matched_all {
+                    let empty = pyo3::ffi::PyList_New(0);
+                    pyo3::ffi::Py_INCREF(empty);
+                    let wrapper = pyo3::ffi::PyList_New(1);
+                    pyo3::ffi::PyList_SET_ITEM(wrapper, 0, empty);
+                    let result = pyo3::ffi::PySequence_Repeat(wrapper, n);
+                    pyo3::ffi::Py_DECREF(wrapper);
+                    if result.is_null() {
+                        return Err(pyo3::PyErr::fetch(py));
+                    }
+                    return Ok(Bound::from_owned_ptr(py, result).downcast_into_unchecked());
+                }
+            }
+
             let period = detect_list_cycle(in_ptr, n);
             let is_cyclic = period > 0;
 
@@ -2635,9 +2697,137 @@ macro_rules! impl_thin_parser_wrapper {
 
 impl_thin_parser_wrapper!(PyZeroOrMore, RustZeroOrMore);
 impl_thin_parser_wrapper!(PyOneOrMore, RustOneOrMore);
-impl_thin_parser_wrapper!(PyOptional, RustOptional);
 impl_thin_parser_wrapper!(PyGroup, RustGroup);
-impl_thin_parser_wrapper!(PySuppress, RustSuppress);
+
+// ============================================================================
+// PyOptional — specialized: never raises exceptions, avoids ParseResults on no-match
+// ============================================================================
+
+#[pymethods]
+impl PyOptional {
+    #[new]
+    fn new(expr: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let inner = extract_parser(expr)?;
+        Ok(Self {
+            inner: Arc::new(RustOptional::new(inner)),
+        })
+    }
+    fn parse_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
+        // Optional always succeeds. Use try_match_at to check cheaply.
+        // If match at 0 returns 0 (no advancement), inner didn't match → return empty list.
+        let end = self.inner.try_match_at(s, 0).unwrap_or(0);
+        if end == 0 {
+            return Ok(PyList::empty(py));
+        }
+        // Inner matched — do full parse to get tokens
+        generic_parse_string(py, self.inner.as_ref(), s)
+    }
+    fn matches(&self, s: &str) -> bool {
+        self.inner.try_match_at(s, 0).is_some()
+    }
+    fn search_string_count(&self, s: &str) -> usize {
+        generic_search_string_count(self.inner.as_ref(), s)
+    }
+    fn search_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
+        generic_search_string(py, self.inner.as_ref(), s)
+    }
+    fn parse_batch_count(&self, inputs: &Bound<'_, PyList>) -> PyResult<usize> {
+        generic_parse_batch_count(self.inner.as_ref(), inputs)
+    }
+    fn parse_batch<'py>(
+        &self,
+        py: Python<'py>,
+        inputs: &Bound<'py, PyList>,
+    ) -> PyResult<Bound<'py, PyList>> {
+        generic_parse_batch(py, self.inner.as_ref(), inputs)
+    }
+    fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyAnd> {
+        make_and(self.inner.clone(), other)
+    }
+    fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
+        make_or(self.inner.clone(), other)
+    }
+}
+
+// ============================================================================
+// PySuppress — specialized: always returns empty list on success
+// ============================================================================
+
+#[pymethods]
+impl PySuppress {
+    #[new]
+    fn new(expr: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let inner = extract_parser(expr)?;
+        Ok(Self {
+            inner: Arc::new(RustSuppress::new(inner)),
+        })
+    }
+    fn parse_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
+        // Suppress always returns empty tokens on success.
+        // Use try_match_at to avoid ParseResults allocation entirely.
+        if self.inner.try_match_at(s, 0).is_some() {
+            Ok(PyList::empty(py))
+        } else {
+            Err(PyValueError::new_err("No match (suppressed)"))
+        }
+    }
+    fn matches(&self, s: &str) -> bool {
+        self.inner.try_match_at(s, 0).is_some()
+    }
+    fn search_string_count(&self, s: &str) -> usize {
+        generic_search_string_count(self.inner.as_ref(), s)
+    }
+    fn search_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
+        generic_search_string(py, self.inner.as_ref(), s)
+    }
+    fn parse_batch_count(&self, inputs: &Bound<'_, PyList>) -> PyResult<usize> {
+        generic_parse_batch_count(self.inner.as_ref(), inputs)
+    }
+    fn parse_batch<'py>(
+        &self,
+        py: Python<'py>,
+        inputs: &Bound<'py, PyList>,
+    ) -> PyResult<Bound<'py, PyList>> {
+        // Suppress parse_batch: each result is an empty list.
+        // Just check which ones match and return empty lists.
+        unsafe {
+            let in_ptr = inputs.as_ptr();
+            let n = pyo3::ffi::PyList_GET_SIZE(in_ptr);
+            if n == 0 {
+                return Ok(PyList::empty(py));
+            }
+            // Create one empty list template, repeat n times
+            let empty = pyo3::ffi::PyList_New(0);
+            if empty.is_null() {
+                return Err(pyo3::PyErr::fetch(py));
+            }
+            let out_ptr = pyo3::ffi::PyList_New(n);
+            if out_ptr.is_null() {
+                pyo3::ffi::Py_DECREF(empty);
+                return Err(pyo3::PyErr::fetch(py));
+            }
+            for i in 0..n {
+                let item = pyo3::ffi::PyList_GET_ITEM(in_ptr, i);
+                let s = py_str_as_str(item);
+                let result = if self.inner.try_match_at(s, 0).is_some() {
+                    pyo3::ffi::Py_INCREF(empty);
+                    empty
+                } else {
+                    pyo3::ffi::PyList_New(0)
+                };
+                pyo3::ffi::PyList_SET_ITEM(out_ptr, i, result);
+            }
+            pyo3::ffi::Py_DECREF(empty);
+            Ok(Bound::from_owned_ptr(py, out_ptr).downcast_into_unchecked())
+        }
+    }
+    fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyAnd> {
+        make_and(self.inner.clone(), other)
+    }
+    fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
+        make_or(self.inner.clone(), other)
+    }
+}
 
 // Character set constants
 #[pyfunction]
