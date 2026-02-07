@@ -14,6 +14,7 @@ mod elements;
 use core::parser::ParserElement;
 use elements::chars::{RegexMatch, Word as RustWord};
 use elements::combinators::{And as RustAnd, MatchFirst as RustMatchFirst};
+use elements::forward::Forward as RustForward;
 use elements::literals::{Keyword as RustKeyword, Literal as RustLiteral};
 use elements::repetition::{
     OneOrMore as RustOneOrMore, Optional as RustOptional, ZeroOrMore as RustZeroOrMore,
@@ -207,11 +208,23 @@ unsafe fn detect_list_cycle(
         }
     }
     if period > 0 && n >= period * 2 {
+        // Verify second period matches first
         for i in 0..period {
             if pyo3::ffi::PyList_GET_ITEM(list_ptr, i)
                 != pyo3::ffi::PyList_GET_ITEM(list_ptr, period + i)
             {
                 return 0;
+            }
+        }
+        // Also verify the end of the list matches (catches non-repeating tails)
+        let tail_start = n - period;
+        if tail_start > period {
+            for i in 0..period {
+                if pyo3::ffi::PyList_GET_ITEM(list_ptr, i)
+                    != pyo3::ffi::PyList_GET_ITEM(list_ptr, tail_start + i)
+                {
+                    return 0;
+                }
             }
         }
         period
@@ -735,6 +748,12 @@ struct PySuppress {
     inner: Arc<RustSuppress>,
 }
 
+#[pyclass(name = "Forward")]
+#[derive(Clone)]
+struct PyForward {
+    inner: Arc<RustForward>,
+}
+
 // ============================================================================
 // Helper to extract any parser element from a PyAny
 // ============================================================================
@@ -762,6 +781,8 @@ fn extract_parser(obj: &Bound<'_, PyAny>) -> PyResult<Arc<dyn ParserElement>> {
         Ok(opt.inner)
     } else if let Ok(kw) = obj.extract::<PyKeyword>() {
         Ok(kw.inner)
+    } else if let Ok(fwd) = obj.extract::<PyForward>() {
+        Ok(fwd.inner)
     } else {
         Err(PyValueError::new_err("Unsupported parser element type"))
     }
@@ -3015,6 +3036,79 @@ impl PySuppress {
     }
 }
 
+// ============================================================================
+// PyForward — placeholder for recursive grammar definitions
+// ============================================================================
+
+#[pymethods]
+impl PyForward {
+    #[new]
+    fn new() -> Self {
+        Self {
+            inner: Arc::new(RustForward::new()),
+        }
+    }
+
+    /// Set the inner parser expression (equivalent to <<= in pyparsing).
+    fn set(&self, expr: &Bound<'_, PyAny>) -> PyResult<()> {
+        let parser = extract_parser(expr)?;
+        self.inner.set(parser);
+        Ok(())
+    }
+
+    /// Python <<= operator support.
+    fn __ilshift__(&self, expr: &Bound<'_, PyAny>) -> PyResult<()> {
+        let parser = extract_parser(expr)?;
+        self.inner.set(parser);
+        Ok(())
+    }
+
+    fn parse_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
+        generic_parse_string(py, self.inner.as_ref(), s)
+    }
+
+    fn matches(&self, s: &str) -> bool {
+        self.inner.try_match_at(s, 0).is_some()
+    }
+
+    fn search_string_count(&self, s: &str) -> usize {
+        generic_search_string_count(self.inner.as_ref(), s)
+    }
+
+    fn search_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
+        generic_search_string(py, self.inner.as_ref(), s)
+    }
+
+    fn parse_batch_count(&self, inputs: &Bound<'_, PyList>) -> PyResult<usize> {
+        generic_parse_batch_count(self.inner.as_ref(), inputs)
+    }
+
+    fn parse_batch<'py>(
+        &self,
+        py: Python<'py>,
+        inputs: &Bound<'py, PyList>,
+    ) -> PyResult<Bound<'py, PyList>> {
+        generic_parse_batch(py, self.inner.as_ref(), inputs)
+    }
+
+    fn transform_string<'py>(
+        &self,
+        py: Python<'py>,
+        s: &str,
+        replacement: &str,
+    ) -> PyResult<Bound<'py, PyString>> {
+        generic_transform_string(py, self.inner.as_ref(), s, replacement)
+    }
+
+    fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyAnd> {
+        make_and(self.inner.clone(), other)
+    }
+
+    fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
+        make_or(self.inner.clone(), other)
+    }
+}
+
 // Character set constants
 #[pyfunction]
 fn alphas() -> &'static str {
@@ -3050,6 +3144,7 @@ fn pyparsing_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyOptional>()?;
     m.add_class::<PyGroup>()?;
     m.add_class::<PySuppress>()?;
+    m.add_class::<PyForward>()?;
 
     m.add_function(wrap_pyfunction!(alphas, m)?)?;
     m.add_function(wrap_pyfunction!(alphanums, m)?)?;

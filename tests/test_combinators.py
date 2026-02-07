@@ -79,5 +79,56 @@ class TestSuppress:
         result = sup.parse_string("hello")
         assert result == []
 
+class TestForward:
+    def test_forward_basic(self):
+        fwd = pp.Forward()
+        fwd.set(pp.Literal("hello"))
+        result = fwd.parse_string("hello world")
+        assert result == ["hello"]
+
+    def test_forward_ilshift(self):
+        fwd = pp.Forward()
+        fwd <<= pp.Word(pp.alphas())
+        result = fwd.parse_string("hello world")
+        assert result == ["hello"]
+
+    def test_forward_in_combination(self):
+        fwd = pp.Forward()
+        fwd.set(pp.Literal("hello"))
+        expr = fwd + pp.Literal(" world")
+        result = expr.parse_string("hello world")
+        assert result == ["hello", " world"]
+
+    def test_forward_matches(self):
+        fwd = pp.Forward()
+        fwd.set(pp.Literal("hello"))
+        assert fwd.matches("hello world")
+        assert not fwd.matches("goodbye")
+
+    def test_forward_search(self):
+        fwd = pp.Forward()
+        fwd.set(pp.Literal("hello"))
+        count = fwd.search_string_count("hello world hello again")
+        assert count == 2
+
+    def test_forward_uninitialized(self):
+        fwd = pp.Forward()
+        with pytest.raises(ValueError):
+            fwd.parse_string("hello")
+
+    def test_forward_parse_batch(self):
+        fwd = pp.Forward()
+        fwd.set(pp.Literal("hello"))
+        result = fwd.parse_batch(["hello", "hello", "goodbye"])
+        assert result[0] == ["hello"]
+        assert result[1] == ["hello"]
+        assert result[2] == []
+
+    def test_forward_transform(self):
+        fwd = pp.Forward()
+        fwd.set(pp.Literal("hello"))
+        result = fwd.transform_string("hello world hello", "hi")
+        assert result == "hi world hi"
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
