@@ -304,8 +304,45 @@ unsafe fn build_indexed_pylist<'py>(
 }
 
 // ============================================================================
-// Generic batch/search helpers for any ParserElement
+// Generic batch/search/transform helpers for any ParserElement
 // ============================================================================
+
+/// Generic transform_string: replace all non-overlapping matches with a replacement string.
+/// Uses try_match_at to scan for matches, building the result efficiently.
+/// Copies non-matched regions by slice (no char-by-char), handles UTF-8 correctly.
+fn generic_transform_string<'py>(
+    py: Python<'py>,
+    parser: &dyn ParserElement,
+    s: &str,
+    replacement: &str,
+) -> PyResult<Bound<'py, PyString>> {
+    let mut result = String::with_capacity(s.len());
+    let mut copy_from = 0; // start of uncopied region
+    let mut loc = 0;
+    while loc < s.len() {
+        if let Some(end) = parser.try_match_at(s, loc) {
+            if end > loc {
+                // Flush non-matched text before this match
+                if copy_from < loc {
+                    result.push_str(&s[copy_from..loc]);
+                }
+                result.push_str(replacement);
+                loc = end;
+                copy_from = end;
+            } else {
+                // Zero-width match — skip
+                loc += 1;
+            }
+        } else {
+            loc += 1;
+        }
+    }
+    // Flush remaining text
+    if copy_from < s.len() {
+        result.push_str(&s[copy_from..]);
+    }
+    Ok(PyString::new(py, &result))
+}
 
 /// Generic search_string_count: count matches by scanning with try_match_at
 fn generic_search_string_count(parser: &dyn ParserElement, s: &str) -> usize {
@@ -808,6 +845,7 @@ impl PyLiteral {
     #[new]
     fn new(py: Python<'_>, s: &str) -> Self {
         let err_msg = format!("Expected '{}'", s);
+        // Pre-create the Python exception object so failure path avoids allocation
         Self {
             inner: Arc::new(RustLiteral::new(s)),
             cached_pystr: PyString::new(py, s).unbind(),
@@ -1099,6 +1137,30 @@ impl PyLiteral {
 
     fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
         make_or(self.inner.clone(), other)
+    }
+
+    /// Replace all non-overlapping matches with replacement string.
+    /// Uses SIMD-accelerated memchr::memmem for literal search.
+    fn transform_string<'py>(
+        &self,
+        py: Python<'py>,
+        s: &str,
+        replacement: &str,
+    ) -> PyResult<Bound<'py, PyString>> {
+        let match_str = self.inner.match_str();
+        if match_str.is_empty() {
+            return Ok(PyString::new(py, s));
+        }
+        let finder = memchr::memmem::Finder::new(match_str.as_bytes());
+        let mut result = String::with_capacity(s.len());
+        let mut last_end = 0;
+        for start in finder.find_iter(s.as_bytes()) {
+            result.push_str(&s[last_end..start]);
+            result.push_str(replacement);
+            last_end = start + match_str.len();
+        }
+        result.push_str(&s[last_end..]);
+        Ok(PyString::new(py, &result))
     }
 }
 
@@ -1672,6 +1734,15 @@ impl PyWord {
     fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
         make_or(self.inner.clone(), other)
     }
+
+    fn transform_string<'py>(
+        &self,
+        py: Python<'py>,
+        s: &str,
+        replacement: &str,
+    ) -> PyResult<Bound<'py, PyString>> {
+        generic_transform_string(py, self.inner.as_ref(), s, replacement)
+    }
 }
 
 #[pymethods]
@@ -1967,6 +2038,15 @@ impl PyRegex {
     fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
         make_or(self.inner.clone(), other)
     }
+
+    fn transform_string<'py>(
+        &self,
+        py: Python<'py>,
+        s: &str,
+        replacement: &str,
+    ) -> PyResult<Bound<'py, PyString>> {
+        generic_transform_string(py, self.inner.as_ref(), s, replacement)
+    }
 }
 
 #[pymethods]
@@ -2109,6 +2189,15 @@ impl PyKeyword {
 
     fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
         make_or(self.inner.clone(), other)
+    }
+
+    fn transform_string<'py>(
+        &self,
+        py: Python<'py>,
+        s: &str,
+        replacement: &str,
+    ) -> PyResult<Bound<'py, PyString>> {
+        generic_transform_string(py, self.inner.as_ref(), s, replacement)
     }
 }
 
@@ -2574,6 +2663,15 @@ impl PyAnd {
     fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyAnd> {
         make_and_from_and(&self.inner, other)
     }
+
+    fn transform_string<'py>(
+        &self,
+        py: Python<'py>,
+        s: &str,
+        replacement: &str,
+    ) -> PyResult<Bound<'py, PyString>> {
+        generic_transform_string(py, self.inner.as_ref(), s, replacement)
+    }
 }
 
 #[pymethods]
@@ -2648,6 +2746,15 @@ impl PyMatchFirst {
     fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
         make_or_from_matchfirst(&self.inner, other)
     }
+
+    fn transform_string<'py>(
+        &self,
+        py: Python<'py>,
+        s: &str,
+        replacement: &str,
+    ) -> PyResult<Bound<'py, PyString>> {
+        generic_transform_string(py, self.inner.as_ref(), s, replacement)
+    }
 }
 
 /// Generate a complete `#[pymethods]` impl for thin wrapper parser types.
@@ -2690,6 +2797,14 @@ macro_rules! impl_thin_parser_wrapper {
             }
             fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
                 make_or(self.inner.clone(), other)
+            }
+            fn transform_string<'py>(
+                &self,
+                py: Python<'py>,
+                s: &str,
+                replacement: &str,
+            ) -> PyResult<Bound<'py, PyString>> {
+                generic_transform_string(py, self.inner.as_ref(), s, replacement)
             }
         }
     };
@@ -2746,6 +2861,15 @@ impl PyOptional {
     }
     fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
         make_or(self.inner.clone(), other)
+    }
+
+    fn transform_string<'py>(
+        &self,
+        py: Python<'py>,
+        s: &str,
+        replacement: &str,
+    ) -> PyResult<Bound<'py, PyString>> {
+        generic_transform_string(py, self.inner.as_ref(), s, replacement)
     }
 }
 
@@ -2826,6 +2950,15 @@ impl PySuppress {
     }
     fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
         make_or(self.inner.clone(), other)
+    }
+
+    fn transform_string<'py>(
+        &self,
+        py: Python<'py>,
+        s: &str,
+        replacement: &str,
+    ) -> PyResult<Bound<'py, PyString>> {
+        generic_transform_string(py, self.inner.as_ref(), s, replacement)
     }
 }
 

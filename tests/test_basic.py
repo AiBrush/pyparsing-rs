@@ -57,5 +57,31 @@ class TestKeyword:
         with pytest.raises(ValueError):
             kw.parse_string("ifx")  # Should fail - "ifx" is not "if"
 
+class TestTransformString:
+    def test_literal_transform(self):
+        lit = pp.Literal("fox")
+        result = lit.transform_string("The fox and the fox", "cat")
+        assert result == "The cat and the cat"
+
+    def test_literal_transform_no_match(self):
+        lit = pp.Literal("fox")
+        result = lit.transform_string("no matches here", "cat")
+        assert result == "no matches here"
+
+    def test_literal_transform_empty(self):
+        lit = pp.Literal("fox")
+        result = lit.transform_string("", "cat")
+        assert result == ""
+
+    def test_word_transform(self):
+        word = pp.Word(pp.alphas())
+        result = word.transform_string("hello world", "X")
+        assert result == "X X"
+
+    def test_regex_transform(self):
+        regex = pp.Regex(r"\d+")
+        result = regex.transform_string("foo 123 bar 456", "NUM")
+        assert result == "foo NUM bar NUM"
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
