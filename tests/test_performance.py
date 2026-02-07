@@ -291,6 +291,46 @@ def run_comparison():
     print(f"  speedup:      {speedup:.1f}x")
 
     # =========================================================================
+    # 11. Literal transform_string (225KB text, SIMD replace)
+    # =========================================================================
+    print("\n--- Literal transform_string (225KB text) ---")
+    pp_transform_lit = pp.Literal("fox")
+    pp_transform_lit.add_parse_action(lambda: "cat")
+    def pp_transform_bench():
+        pp_transform_lit.transform_string(big_text)
+    pp_ns = benchmark(pp_transform_bench)
+
+    def rs_transform_bench():
+        rs_search_lit.transform_string(big_text, "cat")
+    rs_ns = benchmark(rs_transform_bench)
+
+    speedup = pp_ns / rs_ns
+    results["literal_transform"] = speedup
+    print(f"  pyparsing:    {pp_ns/1e6:.1f} ms  (transform_string)")
+    print(f"  pyparsing_rs: {rs_ns/1e6:.1f} ms  (transform_string)")
+    print(f"  speedup:      {speedup:.1f}x")
+
+    # =========================================================================
+    # 12. Word transform_string (250KB text)
+    # =========================================================================
+    print("\n--- Word transform_string (250KB text) ---")
+    pp_transform_word = pp.Word(pp.alphas)
+    pp_transform_word.add_parse_action(lambda: "X")
+    def pp_word_transform_bench():
+        pp_transform_word.transform_string(word_text)
+    pp_ns = benchmark(pp_word_transform_bench)
+
+    def rs_word_transform_bench():
+        rs_word.transform_string(word_text, "X")
+    rs_ns = benchmark(rs_word_transform_bench)
+
+    speedup = pp_ns / rs_ns
+    results["word_transform"] = speedup
+    print(f"  pyparsing:    {pp_ns/1e6:.1f} ms  (transform_string)")
+    print(f"  pyparsing_rs: {rs_ns/1e6:.1f} ms  (transform_string)")
+    print(f"  speedup:      {speedup:.1f}x")
+
+    # =========================================================================
     # Summary
     # =========================================================================
     print("\n" + "=" * 60)
