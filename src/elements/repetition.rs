@@ -115,3 +115,45 @@ impl ParserElement for Optional {
         Some(self.element.try_match_at(input, loc).unwrap_or(loc))
     }
 }
+
+/// Exactly - matches exactly N repetitions of an element
+pub struct Exactly {
+    element: Arc<dyn ParserElement>,
+    count: usize,
+}
+
+impl Exactly {
+    pub fn new(element: Arc<dyn ParserElement>, count: usize) -> Self {
+        Self { element, count }
+    }
+}
+
+impl ParserElement for Exactly {
+    fn parse_impl<'a>(&self, ctx: &mut ParseContext<'a>, mut loc: usize) -> ParseResult<'a> {
+        let mut results = ParseResults::new();
+
+        for _ in 0..self.count {
+            let (new_loc, res) = self.element.parse_impl(ctx, loc)?;
+            if new_loc == loc {
+                return Err(ParseException::new(loc, "No progress in Exactly"));
+            }
+            results.extend(res);
+            loc = new_loc;
+        }
+
+        Ok((loc, results))
+    }
+
+    #[inline]
+    fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
+        let mut pos = loc;
+        for _ in 0..self.count {
+            let end = self.element.try_match_at(input, pos)?;
+            if end == pos {
+                return None;
+            }
+            pos = end;
+        }
+        Some(pos)
+    }
+}

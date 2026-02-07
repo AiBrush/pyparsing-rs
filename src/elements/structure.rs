@@ -1,4 +1,5 @@
 use crate::core::context::ParseContext;
+use crate::core::exceptions::ParseException;
 use crate::core::parser::{ParseResult, ParserElement};
 use crate::core::results::ParseResults;
 use std::sync::Arc;
@@ -48,11 +49,36 @@ impl ParserElement for Suppress {
         // Use try_match_at to avoid creating ParseResults from inner element
         match self.element.try_match_at(ctx.input(), loc) {
             Some(new_loc) => Ok((new_loc, ParseResults::new())),
-            None => Err(crate::core::exceptions::ParseException::new(
-                loc,
-                "Suppress: no match",
-            )),
+            None => Err(ParseException::new(loc, "Suppress: no match")),
         }
+    }
+
+    /// Zero-alloc match — delegates to inner element
+    #[inline]
+    fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
+        self.element.try_match_at(input, loc)
+    }
+}
+
+/// Combine - joins matched tokens into a single concatenated string.
+/// Like pyparsing's Combine: `Combine(Word(alphas) + Literal("-") + Word(nums))`
+/// would produce `["abc-123"]` instead of `["abc", "-", "123"]`.
+pub struct Combine {
+    element: Arc<dyn ParserElement>,
+}
+
+impl Combine {
+    pub fn new(element: Arc<dyn ParserElement>) -> Self {
+        Self { element }
+    }
+}
+
+impl ParserElement for Combine {
+    fn parse_impl<'a>(&self, ctx: &mut ParseContext<'a>, loc: usize) -> ParseResult<'a> {
+        let (new_loc, _res) = self.element.parse_impl(ctx, loc)?;
+        // Instead of joining individual tokens, just slice the original input
+        let combined = &ctx.input()[loc..new_loc];
+        Ok((new_loc, ParseResults::from_single(combined)))
     }
 
     /// Zero-alloc match — delegates to inner element

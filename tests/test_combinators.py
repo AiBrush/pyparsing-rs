@@ -130,5 +130,66 @@ class TestForward:
         result = fwd.transform_string("hello world hello", "hi")
         assert result == "hi world hi"
 
+class TestCombine:
+    def test_combine_basic(self):
+        word = pp.Word(pp.alphas())
+        dash = pp.Literal("-")
+        expr = pp.Combine(word + dash + word)
+        result = expr.parse_string("hello-world")
+        assert result == ["hello-world"]
+
+    def test_combine_no_split(self):
+        expr = pp.Combine(pp.Literal("abc") + pp.Literal("def"))
+        result = expr.parse_string("abcdef")
+        assert result == ["abcdef"]
+
+    def test_combine_mismatch(self):
+        expr = pp.Combine(pp.Literal("abc") + pp.Literal("def"))
+        with pytest.raises(ValueError):
+            expr.parse_string("abcxyz")
+
+    def test_combine_in_sequence(self):
+        combined = pp.Combine(pp.Word(pp.alphas()) + pp.Literal("-") + pp.Word(pp.nums()))
+        rest = pp.Literal(" end")
+        expr = combined + rest
+        result = expr.parse_string("abc-123 end")
+        assert result == ["abc-123", " end"]
+
+    def test_combine_search(self):
+        expr = pp.Combine(pp.Word(pp.alphas()) + pp.Literal("-") + pp.Word(pp.nums()))
+        count = expr.search_string_count("foo-1 bar-2 baz-3")
+        assert count == 3
+
+class TestExactly:
+    def test_exactly_match(self):
+        lit = pp.Literal("a")
+        expr = pp.Exactly(lit, 3)
+        result = expr.parse_string("aaa")
+        assert result == ["a", "a", "a"]
+
+    def test_exactly_too_few(self):
+        lit = pp.Literal("a")
+        expr = pp.Exactly(lit, 3)
+        with pytest.raises(ValueError):
+            expr.parse_string("aa")
+
+    def test_exactly_extra_ignored(self):
+        lit = pp.Literal("a")
+        expr = pp.Exactly(lit, 2)
+        result = expr.parse_string("aaaa")
+        assert result == ["a", "a"]
+
+    def test_exactly_one(self):
+        word = pp.Word(pp.alphas())
+        expr = pp.Exactly(word, 1)
+        result = expr.parse_string("hello")
+        assert result == ["hello"]
+
+    def test_exactly_search(self):
+        lit = pp.Literal("a")
+        expr = pp.Exactly(lit, 3)
+        count = expr.search_string_count("aaabaaabaa")
+        assert count == 2
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -83,5 +83,33 @@ class TestTransformString:
         result = regex.transform_string("foo 123 bar 456", "NUM")
         assert result == "foo NUM bar NUM"
 
+class TestOneOf:
+    def test_one_of_basic(self):
+        expr = pp.one_of("+ - * /")
+        assert expr.parse_string("+") == ["+"]
+        assert expr.parse_string("-") == ["-"]
+        assert expr.parse_string("*") == ["*"]
+        assert expr.parse_string("/") == ["/"]
+
+    def test_one_of_no_match(self):
+        expr = pp.one_of("+ - * /")
+        with pytest.raises(ValueError):
+            expr.parse_string("x")
+
+    def test_one_of_in_expr(self):
+        num = pp.Word(pp.nums())
+        op = pp.one_of("+ -")
+        expr = num + op + num
+        result = expr.parse_string("3+5")
+        assert result == ["3", "+", "5"]
+
+    def test_one_of_search(self):
+        expr = pp.one_of("+ - * /")
+        assert expr.search_string_count("1+2-3*4/5") == 4
+
+    def test_one_of_empty_raises(self):
+        with pytest.raises(ValueError):
+            pp.one_of("")
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

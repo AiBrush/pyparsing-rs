@@ -17,9 +17,10 @@ use elements::combinators::{And as RustAnd, MatchFirst as RustMatchFirst};
 use elements::forward::Forward as RustForward;
 use elements::literals::{Keyword as RustKeyword, Literal as RustLiteral};
 use elements::repetition::{
-    OneOrMore as RustOneOrMore, Optional as RustOptional, ZeroOrMore as RustZeroOrMore,
+    Exactly as RustExactly, OneOrMore as RustOneOrMore, Optional as RustOptional,
+    ZeroOrMore as RustZeroOrMore,
 };
-use elements::structure::{Group as RustGroup, Suppress as RustSuppress};
+use elements::structure::{Combine as RustCombine, Group as RustGroup, Suppress as RustSuppress};
 
 // ============================================================================
 // Raw FFI helpers — deduplicated from repeated inline patterns
@@ -754,6 +755,18 @@ struct PyForward {
     inner: Arc<RustForward>,
 }
 
+#[pyclass(name = "Combine")]
+#[derive(Clone)]
+struct PyCombine {
+    inner: Arc<RustCombine>,
+}
+
+#[pyclass(name = "Exactly")]
+#[derive(Clone)]
+struct PyExactly {
+    inner: Arc<RustExactly>,
+}
+
 // ============================================================================
 // Helper to extract any parser element from a PyAny
 // ============================================================================
@@ -783,6 +796,10 @@ fn extract_parser(obj: &Bound<'_, PyAny>) -> PyResult<Arc<dyn ParserElement>> {
         Ok(kw.inner)
     } else if let Ok(fwd) = obj.extract::<PyForward>() {
         Ok(fwd.inner)
+    } else if let Ok(comb) = obj.extract::<PyCombine>() {
+        Ok(comb.inner)
+    } else if let Ok(exact) = obj.extract::<PyExactly>() {
+        Ok(exact.inner)
     } else {
         Err(PyValueError::new_err("Unsupported parser element type"))
     }
@@ -2887,6 +2904,7 @@ macro_rules! impl_thin_parser_wrapper {
 impl_thin_parser_wrapper!(PyZeroOrMore, RustZeroOrMore);
 impl_thin_parser_wrapper!(PyOneOrMore, RustOneOrMore);
 impl_thin_parser_wrapper!(PyGroup, RustGroup);
+impl_thin_parser_wrapper!(PyCombine, RustCombine);
 
 // ============================================================================
 // PyOptional — specialized: never raises exceptions, avoids ParseResults on no-match
@@ -3109,6 +3127,57 @@ impl PyForward {
     }
 }
 
+// ============================================================================
+// PyExactly — takes expr + count, can't use thin wrapper macro
+// ============================================================================
+
+#[pymethods]
+impl PyExactly {
+    #[new]
+    fn new(expr: &Bound<'_, PyAny>, count: usize) -> PyResult<Self> {
+        let inner = extract_parser(expr)?;
+        Ok(Self {
+            inner: Arc::new(RustExactly::new(inner, count)),
+        })
+    }
+    fn parse_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
+        generic_parse_string(py, self.inner.as_ref(), s)
+    }
+    fn matches(&self, s: &str) -> bool {
+        self.inner.try_match_at(s, 0).is_some()
+    }
+    fn search_string_count(&self, s: &str) -> usize {
+        generic_search_string_count(self.inner.as_ref(), s)
+    }
+    fn search_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
+        generic_search_string(py, self.inner.as_ref(), s)
+    }
+    fn parse_batch_count(&self, inputs: &Bound<'_, PyList>) -> PyResult<usize> {
+        generic_parse_batch_count(self.inner.as_ref(), inputs)
+    }
+    fn parse_batch<'py>(
+        &self,
+        py: Python<'py>,
+        inputs: &Bound<'py, PyList>,
+    ) -> PyResult<Bound<'py, PyList>> {
+        generic_parse_batch(py, self.inner.as_ref(), inputs)
+    }
+    fn transform_string<'py>(
+        &self,
+        py: Python<'py>,
+        s: &str,
+        replacement: &str,
+    ) -> PyResult<Bound<'py, PyString>> {
+        generic_transform_string(py, self.inner.as_ref(), s, replacement)
+    }
+    fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyAnd> {
+        make_and(self.inner.clone(), other)
+    }
+    fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
+        make_or(self.inner.clone(), other)
+    }
+}
+
 // Character set constants
 #[pyfunction]
 fn alphas() -> &'static str {
@@ -3130,6 +3199,22 @@ fn printables() -> &'static str {
     "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
 }
 
+/// Create a MatchFirst from a space-separated string of literal alternatives.
+/// Equivalent to pyparsing.one_of("+ - * /").
+#[pyfunction]
+fn one_of(strs: &str) -> PyResult<PyMatchFirst> {
+    let mut elements: Vec<Arc<dyn ParserElement>> = Vec::new();
+    for s in strs.split_whitespace() {
+        elements.push(Arc::new(RustLiteral::new(s)));
+    }
+    if elements.is_empty() {
+        return Err(PyValueError::new_err("one_of requires at least one string"));
+    }
+    Ok(PyMatchFirst {
+        inner: Arc::new(RustMatchFirst::new(elements)),
+    })
+}
+
 /// pyparsing_rs module
 #[pymodule]
 fn pyparsing_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -3145,11 +3230,14 @@ fn pyparsing_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyGroup>()?;
     m.add_class::<PySuppress>()?;
     m.add_class::<PyForward>()?;
+    m.add_class::<PyCombine>()?;
+    m.add_class::<PyExactly>()?;
 
     m.add_function(wrap_pyfunction!(alphas, m)?)?;
     m.add_function(wrap_pyfunction!(alphanums, m)?)?;
     m.add_function(wrap_pyfunction!(nums, m)?)?;
     m.add_function(wrap_pyfunction!(printables, m)?)?;
+    m.add_function(wrap_pyfunction!(one_of, m)?)?;
 
     m.add("__version__", "0.2.0")?;
     Ok(())
