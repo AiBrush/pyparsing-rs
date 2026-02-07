@@ -12,7 +12,7 @@ mod core;
 mod elements;
 
 use core::parser::ParserElement;
-use elements::chars::{RegexMatch, Word as RustWord};
+use elements::chars::{QuotedString as RustQuotedString, RegexMatch, Word as RustWord};
 use elements::combinators::{And as RustAnd, MatchFirst as RustMatchFirst};
 use elements::forward::Forward as RustForward;
 use elements::literals::{
@@ -27,7 +27,10 @@ use elements::repetition::{
     Exactly as RustExactly, OneOrMore as RustOneOrMore, Optional as RustOptional,
     ZeroOrMore as RustZeroOrMore,
 };
-use elements::structure::{Combine as RustCombine, Group as RustGroup, Suppress as RustSuppress};
+use elements::structure::{
+    Combine as RustCombine, Empty as RustEmpty, Group as RustGroup, NoMatch as RustNoMatch,
+    SkipTo as RustSkipTo, Suppress as RustSuppress,
+};
 
 // ============================================================================
 // Raw FFI helpers — deduplicated from repeated inline patterns
@@ -822,6 +825,30 @@ struct PyRestOfLine {
     inner: Arc<RustRestOfLine>,
 }
 
+#[pyclass(name = "QuotedString")]
+#[derive(Clone)]
+struct PyQuotedString {
+    inner: Arc<RustQuotedString>,
+}
+
+#[pyclass(name = "Empty")]
+#[derive(Clone)]
+struct PyEmpty {
+    inner: Arc<RustEmpty>,
+}
+
+#[pyclass(name = "NoMatch")]
+#[derive(Clone)]
+struct PyNoMatch {
+    inner: Arc<RustNoMatch>,
+}
+
+#[pyclass(name = "SkipTo")]
+#[derive(Clone)]
+struct PySkipTo {
+    inner: Arc<RustSkipTo>,
+}
+
 // ============================================================================
 // Helper to extract any parser element from a PyAny
 // ============================================================================
@@ -871,6 +898,14 @@ fn extract_parser(obj: &Bound<'_, PyAny>) -> PyResult<Arc<dyn ParserElement>> {
         Ok(le.inner)
     } else if let Ok(rol) = obj.extract::<PyRestOfLine>() {
         Ok(rol.inner)
+    } else if let Ok(qs) = obj.extract::<PyQuotedString>() {
+        Ok(qs.inner)
+    } else if let Ok(empty) = obj.extract::<PyEmpty>() {
+        Ok(empty.inner)
+    } else if let Ok(nm) = obj.extract::<PyNoMatch>() {
+        Ok(nm.inner)
+    } else if let Ok(st) = obj.extract::<PySkipTo>() {
+        Ok(st.inner)
     } else {
         Err(PyValueError::new_err("Unsupported parser element type"))
     }
@@ -3366,6 +3401,67 @@ impl_noarg_parser!(PyStringEnd, RustStringEnd);
 impl_noarg_parser!(PyLineStart, RustLineStart);
 impl_noarg_parser!(PyLineEnd, RustLineEnd);
 impl_noarg_parser!(PyRestOfLine, RustRestOfLine::new());
+impl_noarg_parser!(PyEmpty, RustEmpty);
+impl_noarg_parser!(PyNoMatch, RustNoMatch);
+
+// ============================================================================
+// SkipTo — takes a parser element target
+// ============================================================================
+
+impl_thin_parser_wrapper!(PySkipTo, RustSkipTo);
+
+// ============================================================================
+// QuotedString — custom constructor with optional params
+// ============================================================================
+
+#[pymethods]
+impl PyQuotedString {
+    #[new]
+    #[pyo3(signature = (quote_char="\"", esc_char=None, multiline=false, unquote=true))]
+    fn new(quote_char: &str, esc_char: Option<&str>, multiline: bool, unquote: bool) -> Self {
+        Self {
+            inner: Arc::new(RustQuotedString::new(
+                quote_char, esc_char, multiline, unquote,
+            )),
+        }
+    }
+    fn parse_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
+        generic_parse_string(py, self.inner.as_ref(), s)
+    }
+    fn matches(&self, s: &str) -> bool {
+        self.inner.try_match_at(s, 0).is_some()
+    }
+    fn search_string_count(&self, s: &str) -> usize {
+        generic_search_string_count(self.inner.as_ref(), s)
+    }
+    fn search_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
+        generic_search_string(py, self.inner.as_ref(), s)
+    }
+    fn parse_batch_count(&self, inputs: &Bound<'_, PyList>) -> PyResult<usize> {
+        generic_parse_batch_count(self.inner.as_ref(), inputs)
+    }
+    fn parse_batch<'py>(
+        &self,
+        py: Python<'py>,
+        inputs: &Bound<'py, PyList>,
+    ) -> PyResult<Bound<'py, PyList>> {
+        generic_parse_batch(py, self.inner.as_ref(), inputs)
+    }
+    fn transform_string<'py>(
+        &self,
+        py: Python<'py>,
+        s: &str,
+        replacement: &str,
+    ) -> PyResult<Bound<'py, PyString>> {
+        generic_transform_string(py, self.inner.as_ref(), s, replacement)
+    }
+    fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyAnd> {
+        make_and(self.inner.clone(), other)
+    }
+    fn __or__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMatchFirst> {
+        make_or(self.inner.clone(), other)
+    }
+}
 
 // Character set constants
 #[pyfunction]
@@ -3386,6 +3482,21 @@ fn nums() -> &'static str {
 #[pyfunction]
 fn printables() -> &'static str {
     "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+}
+
+#[pyfunction]
+fn hexnums() -> &'static str {
+    "0123456789abcdefABCDEF"
+}
+
+#[pyfunction]
+fn alphas_upper() -> &'static str {
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+}
+
+#[pyfunction]
+fn alphas_lower() -> &'static str {
+    "abcdefghijklmnopqrstuvwxyz"
 }
 
 /// Create a MatchFirst from a space-separated string of literal alternatives.
@@ -3429,11 +3540,18 @@ fn pyparsing_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyLineStart>()?;
     m.add_class::<PyLineEnd>()?;
     m.add_class::<PyRestOfLine>()?;
+    m.add_class::<PyQuotedString>()?;
+    m.add_class::<PyEmpty>()?;
+    m.add_class::<PyNoMatch>()?;
+    m.add_class::<PySkipTo>()?;
 
     m.add_function(wrap_pyfunction!(alphas, m)?)?;
     m.add_function(wrap_pyfunction!(alphanums, m)?)?;
     m.add_function(wrap_pyfunction!(nums, m)?)?;
     m.add_function(wrap_pyfunction!(printables, m)?)?;
+    m.add_function(wrap_pyfunction!(hexnums, m)?)?;
+    m.add_function(wrap_pyfunction!(alphas_upper, m)?)?;
+    m.add_function(wrap_pyfunction!(alphas_lower, m)?)?;
     m.add_function(wrap_pyfunction!(one_of, m)?)?;
 
     m.add("__version__", "0.2.0")?;

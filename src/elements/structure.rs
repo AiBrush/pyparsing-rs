@@ -4,6 +4,71 @@ use crate::core::parser::{ParseResult, ParserElement};
 use crate::core::results::ParseResults;
 use std::sync::Arc;
 
+/// Empty - always matches at the current position, consuming nothing.
+pub struct Empty;
+
+impl ParserElement for Empty {
+    fn parse_impl<'a>(&self, _ctx: &mut ParseContext<'a>, loc: usize) -> ParseResult<'a> {
+        Ok((loc, ParseResults::new()))
+    }
+
+    #[inline(always)]
+    fn try_match_at(&self, _input: &str, loc: usize) -> Option<usize> {
+        Some(loc)
+    }
+}
+
+/// NoMatch - never matches.
+pub struct NoMatch;
+
+impl ParserElement for NoMatch {
+    fn parse_impl<'a>(&self, _ctx: &mut ParseContext<'a>, loc: usize) -> ParseResult<'a> {
+        Err(ParseException::new(loc, "NoMatch will never match"))
+    }
+
+    #[inline(always)]
+    fn try_match_at(&self, _input: &str, _loc: usize) -> Option<usize> {
+        None
+    }
+}
+
+/// SkipTo - matches everything up to (but not including) a specified expression.
+pub struct SkipTo {
+    target: Arc<dyn ParserElement>,
+}
+
+impl SkipTo {
+    pub fn new(target: Arc<dyn ParserElement>) -> Self {
+        Self { target }
+    }
+}
+
+impl ParserElement for SkipTo {
+    fn parse_impl<'a>(&self, ctx: &mut ParseContext<'a>, loc: usize) -> ParseResult<'a> {
+        let input = ctx.input();
+        let mut pos = loc;
+        while pos <= input.len() {
+            if self.target.try_match_at(input, pos).is_some() {
+                return Ok((pos, ParseResults::from_single(&input[loc..pos])));
+            }
+            pos += 1;
+        }
+        Err(ParseException::new(loc, "SkipTo: target not found"))
+    }
+
+    #[inline]
+    fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
+        let mut pos = loc;
+        while pos <= input.len() {
+            if self.target.try_match_at(input, pos).is_some() {
+                return Some(pos);
+            }
+            pos += 1;
+        }
+        None
+    }
+}
+
 /// Group - wraps results in a nested structure
 pub struct Group {
     element: Arc<dyn ParserElement>,

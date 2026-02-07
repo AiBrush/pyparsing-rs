@@ -286,3 +286,78 @@ impl ParserElement for RegexMatch {
         }
     }
 }
+
+/// QuotedString - matches text enclosed in quote characters.
+/// Supports escape characters and multiline strings.
+pub struct QuotedString {
+    quote_char: u8,
+    esc_char: Option<u8>,
+    multiline: bool,
+    unquote: bool,
+    error_msg: Arc<str>,
+}
+
+impl QuotedString {
+    pub fn new(quote_char: &str, esc_char: Option<&str>, multiline: bool, unquote: bool) -> Self {
+        let qc = quote_char.bytes().next().unwrap_or(b'"');
+        let ec = esc_char.and_then(|e| e.bytes().next());
+        let error_msg: Arc<str> =
+            format!("Expected quoted string starting with '{}'", quote_char).into();
+        Self {
+            quote_char: qc,
+            esc_char: ec,
+            multiline,
+            unquote,
+            error_msg,
+        }
+    }
+
+    /// Find the end of the quoted string, returns (end_pos, content_start, content_end)
+    #[inline]
+    fn find_end(&self, input: &[u8], loc: usize) -> Option<(usize, usize, usize)> {
+        if loc >= input.len() || input[loc] != self.quote_char {
+            return None;
+        }
+        let content_start = loc + 1;
+        let mut i = content_start;
+        while i < input.len() {
+            let b = input[i];
+            if !self.multiline && b == b'\n' {
+                return None;
+            }
+            if let Some(esc) = self.esc_char {
+                if b == esc {
+                    i += 2; // skip escaped char
+                    continue;
+                }
+            }
+            if b == self.quote_char {
+                return Some((i + 1, content_start, i));
+            }
+            i += 1;
+        }
+        None
+    }
+}
+
+impl ParserElement for QuotedString {
+    fn parse_impl<'a>(&self, ctx: &mut ParseContext<'a>, loc: usize) -> ParseResult<'a> {
+        let input = ctx.input();
+        let bytes = input.as_bytes();
+        if let Some((end, cs, ce)) = self.find_end(bytes, loc) {
+            let result_str = if self.unquote {
+                &input[cs..ce]
+            } else {
+                &input[loc..end]
+            };
+            Ok((end, ParseResults::from_single(result_str)))
+        } else {
+            Err(ParseException::new(loc, self.error_msg.clone()))
+        }
+    }
+
+    #[inline]
+    fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
+        self.find_end(input.as_bytes(), loc).map(|(end, _, _)| end)
+    }
+}

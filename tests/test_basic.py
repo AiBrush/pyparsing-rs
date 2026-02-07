@@ -184,5 +184,74 @@ class TestPositionalAnchors:
         rol = pp.rest_of_line()
         assert rol.parse_string("") == [""]
 
+class TestQuotedString:
+    def test_double_quoted(self):
+        qs = pp.QuotedString('"')
+        assert qs.parse_string('"hello world"') == ["hello world"]
+
+    def test_single_quoted(self):
+        qs = pp.QuotedString("'")
+        assert qs.parse_string("'hello world'") == ["hello world"]
+
+    def test_with_escape(self):
+        qs = pp.QuotedString('"', esc_char="\\")
+        result = qs.parse_string('"hello \\"world\\" end"')
+        assert "hello" in result[0]
+
+    def test_search(self):
+        qs = pp.QuotedString('"')
+        assert qs.search_string_count('say "hello" then "goodbye"') == 2
+
+    def test_no_match(self):
+        qs = pp.QuotedString('"')
+        with pytest.raises(ValueError):
+            qs.parse_string("no quotes here")
+
+    def test_unquote_false(self):
+        qs = pp.QuotedString('"', unquote=False)
+        assert qs.parse_string('"hello"') == ['"hello"']
+
+class TestEmpty:
+    def test_empty_matches(self):
+        empty = pp.Empty()
+        assert empty.matches("anything")
+        assert empty.parse_string("hello") == []
+
+class TestNoMatch:
+    def test_no_match(self):
+        nm = pp.NoMatch()
+        assert not nm.matches("anything")
+        with pytest.raises(ValueError):
+            nm.parse_string("hello")
+
+class TestSkipTo:
+    def test_skip_to_basic(self):
+        skip = pp.SkipTo(pp.Literal("end"))
+        result = skip.parse_string("hello world end")
+        assert result == ["hello world "]
+
+    def test_skip_to_not_found(self):
+        skip = pp.SkipTo(pp.Literal("end"))
+        with pytest.raises(ValueError):
+            skip.parse_string("hello world")
+
+    def test_skip_to_in_expr(self):
+        skip = pp.SkipTo(pp.Literal(":"))
+        colon = pp.Literal(":")
+        value = pp.rest_of_line()
+        expr = skip + colon + value
+        result = expr.parse_string("key:value here")
+        assert result == ["key", ":", "value here"]
+
+class TestCharHelpers:
+    def test_hexnums(self):
+        assert pp.hexnums() == "0123456789abcdefABCDEF"
+
+    def test_alphas_upper(self):
+        assert pp.alphas_upper() == "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+    def test_alphas_lower(self):
+        assert pp.alphas_lower() == "abcdefghijklmnopqrstuvwxyz"
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
