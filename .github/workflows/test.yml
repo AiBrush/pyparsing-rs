@@ -1,0 +1,125 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same branch/PR
+concurrency:
+  group: test-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  # ── Stage 1: Unit Tests ────────────────────────────────────────────
+  test-python:
+    name: Test (Python)
+    if: github.event_name != 'merge_group'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: test-python
+      - name: Install dependencies
+        run: pip install maturin pytest
+      - name: Build and install
+        run: |
+          maturin build --release --out dist
+          pip install dist/*.whl
+      - name: Import smoke test
+        run: |
+          python -c "
+          import pyparsing_rs
+          print('pyparsing_rs imported OK')
+          "
+      - name: Run tests
+        run: pytest tests/ -v
+
+  test-rust:
+    name: Test (Rust)
+    if: github.event_name != 'merge_group'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: test-rust
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run clippy
+        run: cargo clippy --all -- -D warnings
+      - name: Run tests
+        run: cargo test --all
+
+  # ── Stage 1b: CodeQL (parallel with unit tests) ───────────────────
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    if: github.event_name != 'merge_group'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, actions]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v4
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: '/language:${{ matrix.language }}'
+
+  # ── Stage 2: Benchmarks (only if ALL tests pass) ──────────────────
+  bench-python:
+    name: Benchmark (Python)
+    needs: [test-python, test-rust, codeql]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: bench-python
+      - name: Install dependencies
+        run: pip install maturin pyparsing
+      - name: Build and install
+        run: |
+          maturin build --release --out dist
+          pip install dist/*.whl
+      - name: Run benchmarks
+        run: python tests/test_performance.py
+      - name: Upload results
+        uses: actions/upload-artifact@v5
+        with:
+          name: bench-python-results
+          path: tests/test_performance.py
