@@ -100,12 +100,14 @@ jobs:
         with:
           python-version: "3.12"
       - name: Set version
-        run: sed -i 's/^version = ".*"/version = "${{ needs.calculate-version.outputs.version }}"/' Cargo.toml
+        run: |
+          sed -i 's/^version = ".*"/version = "${{ needs.calculate-version.outputs.version }}"/' Cargo.toml
+          sed -i 's/^version = ".*"/version = "${{ needs.calculate-version.outputs.version }}"/' pyproject.toml
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist -i 3.9 3.10 3.11 3.12
+          args: --release --out dist -i 3.9 3.10 3.11 3.12 3.13
           sccache: true
           manylinux: auto
       - name: Upload wheels
@@ -129,12 +131,14 @@ jobs:
         with:
           python-version: "3.12"
       - name: Set version
-        run: sed -i 's/^version = ".*"/version = "${{ needs.calculate-version.outputs.version }}"/' Cargo.toml
+        run: |
+          sed -i 's/^version = ".*"/version = "${{ needs.calculate-version.outputs.version }}"/' Cargo.toml
+          sed -i 's/^version = ".*"/version = "${{ needs.calculate-version.outputs.version }}"/' pyproject.toml
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist -i 3.9 3.10 3.11 3.12
+          args: --release --out dist -i 3.9 3.10 3.11 3.12 3.13
           sccache: true
           manylinux: musllinux_1_2
       - name: Upload wheels
@@ -158,12 +162,14 @@ jobs:
         with:
           python-version: "3.12"
       - name: Set version
-        run: sed -i '' 's/^version = ".*"/version = "${{ needs.calculate-version.outputs.version }}"/' Cargo.toml
+        run: |
+          sed -i '' 's/^version = ".*"/version = "${{ needs.calculate-version.outputs.version }}"/' Cargo.toml
+          sed -i '' 's/^version = ".*"/version = "${{ needs.calculate-version.outputs.version }}"/' pyproject.toml
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
+          args: --release --out dist -i 3.9 3.10 3.11 3.12 3.13
           sccache: true
       - name: Upload wheels
         uses: actions/upload-artifact@v5
@@ -190,16 +196,23 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: |
+            3.9
+            3.10
+            3.11
+            3.12
+            3.13
           architecture: ${{ matrix.python_arch }}
       - name: Set version
         shell: bash
-        run: sed -i 's/^version = ".*"/version = "${{ needs.calculate-version.outputs.version }}"/' Cargo.toml
+        run: |
+          sed -i 's/^version = ".*"/version = "${{ needs.calculate-version.outputs.version }}"/' Cargo.toml
+          sed -i 's/^version = ".*"/version = "${{ needs.calculate-version.outputs.version }}"/' pyproject.toml
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
+          args: --release --out dist -i 3.9 3.10 3.11 3.12 3.13
           sccache: true
       - name: Upload wheels
         uses: actions/upload-artifact@v5
@@ -215,7 +228,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Set version
-        run: sed -i 's/^version = ".*"/version = "${{ needs.calculate-version.outputs.version }}"/' Cargo.toml
+        run: |
+          sed -i 's/^version = ".*"/version = "${{ needs.calculate-version.outputs.version }}"/' Cargo.toml
+          sed -i 's/^version = ".*"/version = "${{ needs.calculate-version.outputs.version }}"/' pyproject.toml
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
@@ -257,6 +272,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Publish to PyPI
+        continue-on-error: true
         run: uv publish dist/*
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}

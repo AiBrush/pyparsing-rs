@@ -29,9 +29,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/aibrushcomputer/pyparsing-rs"
-Repository = "https://github.com/aibrushcomputer/pyparsing-rs"
-Issues = "https://github.com/aibrushcomputer/pyparsing-rs/issues"
+Homepage = "https://github.com/AiBrush/pyparsing-rs"
+Repository = "https://github.com/AiBrush/pyparsing-rs"
+Issues = "https://github.com/AiBrush/pyparsing-rs/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

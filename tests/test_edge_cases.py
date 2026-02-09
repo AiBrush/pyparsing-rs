@@ -316,10 +316,9 @@ class TestNestedCombinators:
         assert result == []
 
     def test_chained_and_five_words(self):
-        """Five Words chained with + should parse correctly."""
+        """Five Words chained with + should parse correctly (auto whitespace skip)."""
         w = pp.Word(pp.alphas())
-        sp = pp.Literal(" ")
-        parser = w + sp + w + sp + w
+        parser = w + w + w
         result = parser.parse_string("the quick brown")
         assert "the" in result
         assert "quick" in result
@@ -434,8 +433,8 @@ class TestBoundaryConditions:
         assert regex.matches("") is False
 
     def test_and_matches_method(self):
-        """matches() method on And combinator."""
-        parser = pp.Literal("hello") + pp.Literal(" world")
+        """matches() method on And combinator (auto whitespace skip)."""
+        parser = pp.Literal("hello") + pp.Literal("world")
         assert parser.matches("hello world") is True
         assert parser.matches("hello there") is False
         assert parser.matches("") is False
@@ -731,8 +730,8 @@ class TestBatchOperations:
         assert count == 3
 
     def test_and_parse_batch_count(self):
-        """And parse_batch_count correctness."""
-        parser = pp.Literal("hello") + pp.Literal(" world")
+        """And parse_batch_count correctness (auto whitespace skip)."""
+        parser = pp.Literal("hello") + pp.Literal("world")
         inputs = ["hello world", "goodbye", "hello world", "nope"]
         count = parser.parse_batch_count(inputs)
         assert count == 2
@@ -819,25 +818,16 @@ class TestCrossValidation:
         assert list(pp_result) == list(rs_result)
 
     def test_and_sequence(self, pyparsing):
-        """And (a + b) should produce same tokens.
-
-        Note: pyparsing auto-strips whitespace between elements by default,
-        so we use Literal("world") instead of Literal(" world") to avoid
-        the whitespace-skipping difference. Both should match "hello" then "world".
-        """
+        """And (a + b) should produce same tokens with auto whitespace skip."""
         pp_a = pyparsing.Literal("hello")
         pp_b = pyparsing.Literal("world")
-        pp_result = (pp_a + pp_b).parseString("hello world")
+        pp_result = list((pp_a + pp_b).parseString("hello world"))
 
         rs_a = pp.Literal("hello")
-        rs_b = pp.Literal(" world")
+        rs_b = pp.Literal("world")
         rs_result = (rs_a + rs_b).parse_string("hello world")
 
-        # pyparsing returns ["hello", "world"] (strips whitespace between)
-        # pyparsing_rs returns ["hello", " world"] (literal match includes space)
-        # Both return 2 tokens, first is "hello"
-        assert list(pp_result)[0] == list(rs_result)[0]  # "hello"
-        assert len(list(pp_result)) == len(list(rs_result))  # same count
+        assert pp_result == list(rs_result)  # both ["hello", "world"]
 
     def test_and_no_whitespace(self, pyparsing):
         """And without whitespace between tokens — both should match identically."""
