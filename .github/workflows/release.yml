@@ -262,6 +262,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Publish to PyPI
+        continue-on-error: true
         run: uv publish dist/*
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
