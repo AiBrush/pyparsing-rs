@@ -89,7 +89,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
+          args: --release --out dist -i 3.9 3.10 3.11 3.12 3.13
           sccache: true
       - name: Upload wheels
         uses: actions/upload-artifact@v5
@@ -122,7 +122,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
+          args: --release --out dist -i 3.9 3.10 3.11 3.12 3.13
           sccache: true
       - name: Upload wheels
         uses: actions/upload-artifact@v5
