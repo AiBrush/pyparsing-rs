@@ -22,7 +22,7 @@ def test_arithmetic_integer_parsing():
 
 def test_arithmetic_expressions():
     """Test integer extraction from arithmetic expressions."""
-    from arithmetic import TEST_EXPRESSIONS
+    from test_grammars.arithmetic import TEST_EXPRESSIONS
     import pyparsing_rs as pp_rs
 
     integer_rs = pp_rs.Word(pp_rs.nums())

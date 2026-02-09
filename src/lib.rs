@@ -2403,11 +2403,19 @@ impl PyAnd {
     /// Parse using try_match_at on flattened elements — raw FFI list construction
     fn parse_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
         let elements = self.inner.elements();
+        let bytes = s.as_bytes();
+        let slen = bytes.len();
         unsafe {
             // Collect tokens into a stack buffer (most And sequences are small)
             let mut tokens: Vec<*mut pyo3::ffi::PyObject> = Vec::with_capacity(elements.len());
             let mut pos = 0usize;
-            for elem in elements {
+            for (i, elem) in elements.iter().enumerate() {
+                // Skip whitespace between elements (not before the first)
+                if i > 0 {
+                    while pos < slen && matches!(bytes[pos], b' ' | b'\t' | b'\n' | b'\r') {
+                        pos += 1;
+                    }
+                }
                 match elem.try_match_at(s, pos) {
                     Some(end) => {
                         let sub = &s[pos..end];
@@ -2452,6 +2460,8 @@ impl PyAnd {
     /// Search string — raw FFI with dedup for repeated tokens
     fn search_string<'py>(&self, py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyList>> {
         let elements = self.inner.elements();
+        let bytes = s.as_bytes();
+        let slen = bytes.len();
         unsafe {
             let mut items: Vec<*mut pyo3::ffi::PyObject> = Vec::with_capacity(64);
             let mut dedup: FxHashMap<&str, *mut pyo3::ffi::PyObject> = FxHashMap::default();
@@ -2459,7 +2469,13 @@ impl PyAnd {
             while loc < s.len() {
                 if let Some(end) = self.inner.try_match_at(s, loc) {
                     let mut pos = loc;
-                    for elem in elements {
+                    for (ei, elem) in elements.iter().enumerate() {
+                        // Skip whitespace between elements
+                        if ei > 0 {
+                            while pos < slen && matches!(bytes[pos], b' ' | b'\t' | b'\n' | b'\r') {
+                                pos += 1;
+                            }
+                        }
                         if let Some(elem_end) = elem.try_match_at(s, pos) {
                             let sub = &s[pos..elem_end];
                             if !sub.is_empty() {

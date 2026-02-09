@@ -22,8 +22,22 @@ impl And {
 impl ParserElement for And {
     fn parse_impl<'a>(&self, ctx: &mut ParseContext<'a>, mut loc: usize) -> ParseResult<'a> {
         let mut results = ParseResults::new();
+        let input = ctx.input();
+        let bytes = input.as_bytes();
+        let len = bytes.len();
 
-        for elem in &self.elements {
+        for (i, elem) in self.elements.iter().enumerate() {
+            // Skip whitespace between elements (not before the first)
+            if i > 0 {
+                while loc < len
+                    && (bytes[loc] == b' '
+                        || bytes[loc] == b'\t'
+                        || bytes[loc] == b'\n'
+                        || bytes[loc] == b'\r')
+                {
+                    loc += 1;
+                }
+            }
             match elem.parse_impl(ctx, loc) {
                 Ok((new_loc, res)) => {
                     results.extend(res);
@@ -40,7 +54,20 @@ impl ParserElement for And {
     #[inline]
     fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
         let mut pos = loc;
-        for elem in &self.elements {
+        let bytes = input.as_bytes();
+        let len = bytes.len();
+        for (i, elem) in self.elements.iter().enumerate() {
+            // Skip whitespace between elements (not before the first)
+            if i > 0 {
+                while pos < len
+                    && (bytes[pos] == b' '
+                        || bytes[pos] == b'\t'
+                        || bytes[pos] == b'\n'
+                        || bytes[pos] == b'\r')
+                {
+                    pos += 1;
+                }
+            }
             pos = elem.try_match_at(input, pos)?;
         }
         Some(pos)

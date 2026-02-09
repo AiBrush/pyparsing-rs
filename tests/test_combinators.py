@@ -6,14 +6,14 @@ import pyparsing_rs as pp
 class TestAnd:
     def test_and_sequence(self):
         lit1 = pp.Literal("hello")
-        lit2 = pp.Literal(" world")
+        lit2 = pp.Literal("world")
         combined = lit1 + lit2
         result = combined.parse_string("hello world")
-        assert result == ["hello", " world"]
-    
+        assert result == ["hello", "world"]
+
     def test_and_mismatch(self):
         lit1 = pp.Literal("hello")
-        lit2 = pp.Literal(" world")
+        lit2 = pp.Literal("world")
         combined = lit1 + lit2
         with pytest.raises(ValueError):
             combined.parse_string("hello there")
@@ -95,9 +95,9 @@ class TestForward:
     def test_forward_in_combination(self):
         fwd = pp.Forward()
         fwd.set(pp.Literal("hello"))
-        expr = fwd + pp.Literal(" world")
+        expr = fwd + pp.Literal("world")
         result = expr.parse_string("hello world")
-        assert result == ["hello", " world"]
+        assert result == ["hello", "world"]
 
     def test_forward_matches(self):
         fwd = pp.Forward()
@@ -150,10 +150,10 @@ class TestCombine:
 
     def test_combine_in_sequence(self):
         combined = pp.Combine(pp.Word(pp.alphas()) + pp.Literal("-") + pp.Word(pp.nums()))
-        rest = pp.Literal(" end")
+        rest = pp.Literal("end")
         expr = combined + rest
         result = expr.parse_string("abc-123 end")
-        assert result == ["abc-123", " end"]
+        assert result == ["abc-123", "end"]
 
     def test_combine_search(self):
         expr = pp.Combine(pp.Word(pp.alphas()) + pp.Literal("-") + pp.Word(pp.nums()))
