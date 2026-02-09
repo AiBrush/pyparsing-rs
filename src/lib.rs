@@ -324,7 +324,7 @@ unsafe fn build_indexed_pylist<'py>(
             bulk_incref(ptr, c as usize);
         }
     }
-    Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked())
+    Ok(Bound::from_owned_ptr(py, list_ptr).cast_into_unchecked())
 }
 
 // ============================================================================
@@ -436,7 +436,7 @@ fn generic_search_string<'py>(
             pyo3::ffi::Py_DECREF(ptr);
         }
 
-        Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked())
+        Ok(Bound::from_owned_ptr(py, list_ptr).cast_into_unchecked())
     }
 }
 
@@ -464,7 +464,7 @@ fn generic_parse_string<'py>(
                         PyString::new(py, tok).into_ptr(),
                     );
                 }
-                Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked())
+                Ok(Bound::from_owned_ptr(py, list_ptr).cast_into_unchecked())
             }
         }
         Err(e) => Err(PyValueError::new_err(e.to_string())),
@@ -579,7 +579,7 @@ fn generic_parse_batch<'py>(
             if result.is_null() {
                 return Err(pyo3::PyErr::fetch(py));
             }
-            return Ok(Bound::from_owned_ptr(py, result).downcast_into_unchecked());
+            return Ok(Bound::from_owned_ptr(py, result).cast_into_unchecked());
         }
 
         // Cycle detection: parse one cycle, then repeat
@@ -617,7 +617,7 @@ fn generic_parse_batch<'py>(
                 if result.is_null() {
                     return Err(pyo3::PyErr::fetch(py));
                 }
-                return Ok(Bound::from_owned_ptr(py, result).downcast_into_unchecked());
+                return Ok(Bound::from_owned_ptr(py, result).cast_into_unchecked());
             }
 
             // Has remainder: fill with memcpy doubling + remainder
@@ -642,7 +642,7 @@ fn generic_parse_batch<'py>(
                     bulk_incref(ptr, (num_cycles - 1) as usize);
                 }
             }
-            return Ok(Bound::from_owned_ptr(py, out_ptr).downcast_into_unchecked());
+            return Ok(Bound::from_owned_ptr(py, out_ptr).cast_into_unchecked());
         }
 
         // Fallback: last-pointer cache
@@ -665,7 +665,7 @@ fn generic_parse_batch<'py>(
             }
         }
 
-        Ok(Bound::from_owned_ptr(py, out_ptr).downcast_into_unchecked())
+        Ok(Bound::from_owned_ptr(py, out_ptr).cast_into_unchecked())
     }
 }
 
@@ -673,7 +673,7 @@ fn generic_parse_batch<'py>(
 // Forward declarations of all pyclass structs
 // ============================================================================
 
-#[pyclass(name = "Literal")]
+#[pyclass(name = "Literal", from_py_object)]
 struct PyLiteral {
     inner: Arc<RustLiteral>,
     cached_pystr: Py<PyString>,
@@ -682,7 +682,7 @@ struct PyLiteral {
 
 impl Clone for PyLiteral {
     fn clone(&self) -> Self {
-        Python::with_gil(|py| Self {
+        Python::attach(|py| Self {
             inner: self.inner.clone(),
             cached_pystr: self.cached_pystr.clone_ref(py),
             cached_err_msg: self.cached_err_msg.clone(),
@@ -690,19 +690,19 @@ impl Clone for PyLiteral {
     }
 }
 
-#[pyclass(name = "Word")]
+#[pyclass(name = "Word", from_py_object)]
 #[derive(Clone)]
 struct PyWord {
     inner: Arc<RustWord>,
 }
 
-#[pyclass(name = "Regex")]
+#[pyclass(name = "Regex", from_py_object)]
 #[derive(Clone)]
 struct PyRegex {
     inner: Arc<RegexMatch>,
 }
 
-#[pyclass(name = "Keyword")]
+#[pyclass(name = "Keyword", from_py_object)]
 struct PyKeyword {
     inner: Arc<RustKeyword>,
     cached_pystr: Py<PyString>,
@@ -710,140 +710,140 @@ struct PyKeyword {
 
 impl Clone for PyKeyword {
     fn clone(&self) -> Self {
-        Python::with_gil(|py| Self {
+        Python::attach(|py| Self {
             inner: self.inner.clone(),
             cached_pystr: self.cached_pystr.clone_ref(py),
         })
     }
 }
 
-#[pyclass(name = "And")]
+#[pyclass(name = "And", from_py_object)]
 #[derive(Clone)]
 struct PyAnd {
     inner: Arc<RustAnd>,
 }
 
-#[pyclass(name = "MatchFirst")]
+#[pyclass(name = "MatchFirst", from_py_object)]
 #[derive(Clone)]
 struct PyMatchFirst {
     inner: Arc<RustMatchFirst>,
 }
 
-#[pyclass(name = "ZeroOrMore")]
+#[pyclass(name = "ZeroOrMore", from_py_object)]
 #[derive(Clone)]
 struct PyZeroOrMore {
     inner: Arc<RustZeroOrMore>,
 }
 
-#[pyclass(name = "OneOrMore")]
+#[pyclass(name = "OneOrMore", from_py_object)]
 #[derive(Clone)]
 struct PyOneOrMore {
     inner: Arc<RustOneOrMore>,
 }
 
-#[pyclass(name = "Optional")]
+#[pyclass(name = "Optional", from_py_object)]
 #[derive(Clone)]
 struct PyOptional {
     inner: Arc<RustOptional>,
 }
 
-#[pyclass(name = "Group")]
+#[pyclass(name = "Group", from_py_object)]
 #[derive(Clone)]
 struct PyGroup {
     inner: Arc<RustGroup>,
 }
 
-#[pyclass(name = "Suppress")]
+#[pyclass(name = "Suppress", from_py_object)]
 #[derive(Clone)]
 struct PySuppress {
     inner: Arc<RustSuppress>,
 }
 
-#[pyclass(name = "Forward")]
+#[pyclass(name = "Forward", from_py_object)]
 #[derive(Clone)]
 struct PyForward {
     inner: Arc<RustForward>,
 }
 
-#[pyclass(name = "Combine")]
+#[pyclass(name = "Combine", from_py_object)]
 #[derive(Clone)]
 struct PyCombine {
     inner: Arc<RustCombine>,
 }
 
-#[pyclass(name = "Exactly")]
+#[pyclass(name = "Exactly", from_py_object)]
 #[derive(Clone)]
 struct PyExactly {
     inner: Arc<RustExactly>,
 }
 
-#[pyclass(name = "CaselessLiteral")]
+#[pyclass(name = "CaselessLiteral", from_py_object)]
 #[derive(Clone)]
 struct PyCaselessLiteral {
     inner: Arc<RustCaselessLiteral>,
 }
 
-#[pyclass(name = "CaselessKeyword")]
+#[pyclass(name = "CaselessKeyword", from_py_object)]
 #[derive(Clone)]
 struct PyCaselessKeyword {
     inner: Arc<RustCaselessKeyword>,
 }
 
-#[pyclass(name = "Char")]
+#[pyclass(name = "Char", from_py_object)]
 #[derive(Clone)]
 struct PyChar {
     inner: Arc<RustChar>,
 }
 
-#[pyclass(name = "StringStart")]
+#[pyclass(name = "StringStart", from_py_object)]
 #[derive(Clone)]
 struct PyStringStart {
     inner: Arc<RustStringStart>,
 }
 
-#[pyclass(name = "StringEnd")]
+#[pyclass(name = "StringEnd", from_py_object)]
 #[derive(Clone)]
 struct PyStringEnd {
     inner: Arc<RustStringEnd>,
 }
 
-#[pyclass(name = "LineStart")]
+#[pyclass(name = "LineStart", from_py_object)]
 #[derive(Clone)]
 struct PyLineStart {
     inner: Arc<RustLineStart>,
 }
 
-#[pyclass(name = "LineEnd")]
+#[pyclass(name = "LineEnd", from_py_object)]
 #[derive(Clone)]
 struct PyLineEnd {
     inner: Arc<RustLineEnd>,
 }
 
-#[pyclass(name = "rest_of_line")]
+#[pyclass(name = "rest_of_line", from_py_object)]
 #[derive(Clone)]
 struct PyRestOfLine {
     inner: Arc<RustRestOfLine>,
 }
 
-#[pyclass(name = "QuotedString")]
+#[pyclass(name = "QuotedString", from_py_object)]
 #[derive(Clone)]
 struct PyQuotedString {
     inner: Arc<RustQuotedString>,
 }
 
-#[pyclass(name = "Empty")]
+#[pyclass(name = "Empty", from_py_object)]
 #[derive(Clone)]
 struct PyEmpty {
     inner: Arc<RustEmpty>,
 }
 
-#[pyclass(name = "NoMatch")]
+#[pyclass(name = "NoMatch", from_py_object)]
 #[derive(Clone)]
 struct PyNoMatch {
     inner: Arc<RustNoMatch>,
 }
 
-#[pyclass(name = "SkipTo")]
+#[pyclass(name = "SkipTo", from_py_object)]
 #[derive(Clone)]
 struct PySkipTo {
     inner: Arc<RustSkipTo>,
@@ -1071,7 +1071,7 @@ impl PyLiteral {
                 if result.is_null() {
                     return Err(pyo3::PyErr::fetch(py));
                 }
-                return Ok(Bound::from_owned_ptr(py, result).downcast_into_unchecked());
+                return Ok(Bound::from_owned_ptr(py, result).cast_into_unchecked());
             } else {
                 // Mixed path: last-pointer cache
                 let mut last_item: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
@@ -1096,7 +1096,7 @@ impl PyLiteral {
                     pyo3::ffi::PyList_SET_ITEM(out_ptr, i, inner);
                 }
             }
-            Ok(Bound::from_owned_ptr(py, out_ptr).downcast_into_unchecked())
+            Ok(Bound::from_owned_ptr(py, out_ptr).cast_into_unchecked())
         }
     }
 
@@ -1116,7 +1116,7 @@ impl PyLiteral {
             if result.is_null() {
                 return Err(pyo3::PyErr::fetch(py));
             }
-            Ok(Bound::from_owned_ptr(py, result).downcast_into_unchecked())
+            Ok(Bound::from_owned_ptr(py, result).cast_into_unchecked())
         }
     }
 
@@ -1372,8 +1372,7 @@ impl PyWord {
                     let idx = unique_tokens.len() as u8;
                     if end == s_bytes.len() {
                         pyo3::ffi::Py_INCREF(item);
-                        unique_tokens
-                            .push(Bound::from_owned_ptr(py, item).downcast_into_unchecked());
+                        unique_tokens.push(Bound::from_owned_ptr(py, item).cast_into_unchecked());
                     } else {
                         let s = std::str::from_utf8_unchecked(s_bytes);
                         unique_tokens.push(PyString::new(py, &s[..end]));
@@ -1420,7 +1419,7 @@ impl PyWord {
                     if result.is_null() {
                         return Err(pyo3::PyErr::fetch(py));
                     }
-                    return Ok(Bound::from_owned_ptr(py, result).downcast_into_unchecked());
+                    return Ok(Bound::from_owned_ptr(py, result).cast_into_unchecked());
                 }
 
                 // Fallback: memcpy doubling (when remainder exists)
@@ -1463,7 +1462,7 @@ impl PyWord {
                         out_pos += 1;
                     }
                 }
-                return Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked());
+                return Ok(Bound::from_owned_ptr(py, list_ptr).cast_into_unchecked());
             }
 
             // --- Fallback: direct output using FxHashMap dedup ---
@@ -1496,7 +1495,7 @@ impl PyWord {
                         }
                         let py_str = if end == s_bytes.len() {
                             pyo3::ffi::Py_INCREF(item);
-                            Bound::from_owned_ptr(py, item).downcast_into_unchecked()
+                            Bound::from_owned_ptr(py, item).cast_into_unchecked()
                         } else {
                             let s = std::str::from_utf8_unchecked(s_bytes);
                             PyString::new(py, &s[..end])
@@ -1519,7 +1518,7 @@ impl PyWord {
             for (j, &ptr) in items.iter().enumerate() {
                 pyo3::ffi::PyList_SET_ITEM(list_ptr, j as pyo3::ffi::Py_ssize_t, ptr);
             }
-            Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked())
+            Ok(Bound::from_owned_ptr(py, list_ptr).cast_into_unchecked())
         }
     }
 
@@ -1722,7 +1721,7 @@ impl PyWord {
                     if result.is_null() {
                         return Err(pyo3::PyErr::fetch(py));
                     }
-                    return Ok(Bound::from_owned_ptr(py, result).downcast_into_unchecked());
+                    return Ok(Bound::from_owned_ptr(py, result).cast_into_unchecked());
                 }
 
                 // Scan remainder for words (partial last cycle)
@@ -1811,7 +1810,7 @@ impl PyWord {
                     }
                 }
 
-                return Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked());
+                return Ok(Bound::from_owned_ptr(py, list_ptr).cast_into_unchecked());
             }
 
             // --- Fallback: full-scan approach (non-cyclic text) ---
@@ -1867,7 +1866,7 @@ impl PyWord {
                 out_idx += 1;
             }
 
-            Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked())
+            Ok(Bound::from_owned_ptr(py, list_ptr).cast_into_unchecked())
         }
     }
 
@@ -1991,7 +1990,7 @@ impl PyRegex {
                 pyo3::ffi::PyList_SET_ITEM(list_ptr, idx as pyo3::ffi::Py_ssize_t, ptr);
             }
 
-            Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked())
+            Ok(Bound::from_owned_ptr(py, list_ptr).cast_into_unchecked())
         }
     }
 
@@ -2025,9 +2024,8 @@ impl PyRegex {
                             let idx = unique_tokens.len() as u8;
                             if matched.len() == s.len() {
                                 pyo3::ffi::Py_INCREF(item);
-                                unique_tokens.push(
-                                    Bound::from_owned_ptr(py, item).downcast_into_unchecked(),
-                                );
+                                unique_tokens
+                                    .push(Bound::from_owned_ptr(py, item).cast_into_unchecked());
                             } else {
                                 unique_tokens.push(PyString::new(py, matched));
                             }
@@ -2075,7 +2073,7 @@ impl PyRegex {
                     if result.is_null() {
                         return Err(pyo3::PyErr::fetch(py));
                     }
-                    return Ok(Bound::from_owned_ptr(py, result).downcast_into_unchecked());
+                    return Ok(Bound::from_owned_ptr(py, result).cast_into_unchecked());
                 }
 
                 // Fallback: bulk INCREF + memcpy doubling
@@ -2117,7 +2115,7 @@ impl PyRegex {
                         out_pos += 1;
                     }
                 }
-                return Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked());
+                return Ok(Bound::from_owned_ptr(py, list_ptr).cast_into_unchecked());
             }
 
             // --- Fallback: FxHashMap-based dedup (handles unlimited unique strings) ---
@@ -2143,7 +2141,7 @@ impl PyRegex {
                             Some(matched) => {
                                 let py_str = if matched.len() == s.len() {
                                     pyo3::ffi::Py_INCREF(item);
-                                    Bound::from_owned_ptr(py, item).downcast_into_unchecked()
+                                    Bound::from_owned_ptr(py, item).cast_into_unchecked()
                                 } else {
                                     PyString::new(py, matched)
                                 };
@@ -2169,7 +2167,7 @@ impl PyRegex {
             for (j, &ptr) in items.iter().enumerate() {
                 pyo3::ffi::PyList_SET_ITEM(list_ptr, j as pyo3::ffi::Py_ssize_t, ptr);
             }
-            Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked())
+            Ok(Bound::from_owned_ptr(py, list_ptr).cast_into_unchecked())
         }
     }
 
@@ -2287,7 +2285,7 @@ impl PyKeyword {
             if result.is_null() {
                 return Err(pyo3::PyErr::fetch(py));
             }
-            Ok(Bound::from_owned_ptr(py, result).downcast_into_unchecked())
+            Ok(Bound::from_owned_ptr(py, result).cast_into_unchecked())
         }
     }
 
@@ -2350,7 +2348,7 @@ impl PyKeyword {
                 if result.is_null() {
                     return Err(pyo3::PyErr::fetch(py));
                 }
-                return Ok(Bound::from_owned_ptr(py, result).downcast_into_unchecked());
+                return Ok(Bound::from_owned_ptr(py, result).cast_into_unchecked());
             }
 
             // Mixed path: last-pointer cache
@@ -2376,7 +2374,7 @@ impl PyKeyword {
                 pyo3::ffi::Py_INCREF(inner);
                 pyo3::ffi::PyList_SET_ITEM(out_ptr, i, inner);
             }
-            Ok(Bound::from_owned_ptr(py, out_ptr).downcast_into_unchecked())
+            Ok(Bound::from_owned_ptr(py, out_ptr).cast_into_unchecked())
         }
     }
 
@@ -2444,7 +2442,7 @@ impl PyAnd {
             for (i, &ptr) in tokens.iter().enumerate() {
                 pyo3::ffi::PyList_SET_ITEM(list_ptr, i as pyo3::ffi::Py_ssize_t, ptr);
             }
-            Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked())
+            Ok(Bound::from_owned_ptr(py, list_ptr).cast_into_unchecked())
         }
     }
 
@@ -2517,7 +2515,7 @@ impl PyAnd {
             for (_, ptr) in dedup {
                 pyo3::ffi::Py_DECREF(ptr);
             }
-            Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked())
+            Ok(Bound::from_owned_ptr(py, list_ptr).cast_into_unchecked())
         }
     }
 
@@ -2623,7 +2621,7 @@ impl PyAnd {
                     if result.is_null() {
                         return Err(pyo3::PyErr::fetch(py));
                     }
-                    return Ok(Bound::from_owned_ptr(py, result).downcast_into_unchecked());
+                    return Ok(Bound::from_owned_ptr(py, result).cast_into_unchecked());
                 }
                 // Matched but empty tokens or didn't match — fall through to empty lists
                 if !matched_all {
@@ -2636,7 +2634,7 @@ impl PyAnd {
                     if result.is_null() {
                         return Err(pyo3::PyErr::fetch(py));
                     }
-                    return Ok(Bound::from_owned_ptr(py, result).downcast_into_unchecked());
+                    return Ok(Bound::from_owned_ptr(py, result).cast_into_unchecked());
                 }
             }
 
@@ -2739,7 +2737,7 @@ impl PyAnd {
                     if result.is_null() {
                         return Err(pyo3::PyErr::fetch(py));
                     }
-                    return Ok(Bound::from_owned_ptr(py, result).downcast_into_unchecked());
+                    return Ok(Bound::from_owned_ptr(py, result).cast_into_unchecked());
                 }
 
                 // Fallback: bulk INCREF + memcpy doubling
@@ -2773,7 +2771,7 @@ impl PyAnd {
                     *ob_item.add(out_pos) = unique_tokens.get_unchecked(idx as usize).as_ptr();
                     out_pos += 1;
                 }
-                return Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked());
+                return Ok(Bound::from_owned_ptr(py, list_ptr).cast_into_unchecked());
             }
 
             // --- Fallback: hash-based approach with probe limit ---
@@ -2921,7 +2919,7 @@ impl PyMatchFirst {
                             PyString::new(py, tok).into_ptr(),
                         );
                     }
-                    return Ok(Bound::from_owned_ptr(py, list_ptr).downcast_into_unchecked());
+                    return Ok(Bound::from_owned_ptr(py, list_ptr).cast_into_unchecked());
                 }
             }
         }
@@ -3156,7 +3154,7 @@ impl PySuppress {
                 pyo3::ffi::PyList_SET_ITEM(out_ptr, i, result);
             }
             pyo3::ffi::Py_DECREF(empty);
-            Ok(Bound::from_owned_ptr(py, out_ptr).downcast_into_unchecked())
+            Ok(Bound::from_owned_ptr(py, out_ptr).cast_into_unchecked())
         }
     }
     fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyAnd> {
