@@ -1,6 +1,6 @@
-use crate::core::context::ParseContext;
+use crate::core::context::{skip_ws, ParseContext};
 use crate::core::exceptions::ParseException;
-use crate::core::parser::{ParseResult, ParserElement};
+use crate::core::parser::{ParseResult, ParserElement, ParserKind};
 use crate::core::results::ParseResults;
 use std::sync::Arc;
 
@@ -23,20 +23,12 @@ impl ParserElement for And {
     fn parse_impl<'a>(&self, ctx: &mut ParseContext<'a>, mut loc: usize) -> ParseResult<'a> {
         let mut results = ParseResults::new();
         let input = ctx.input();
-        let bytes = input.as_bytes();
-        let len = bytes.len();
 
-        for (i, elem) in self.elements.iter().enumerate() {
-            // Skip whitespace between elements (not before the first)
-            if i > 0 {
-                while loc < len
-                    && (bytes[loc] == b' '
-                        || bytes[loc] == b'\t'
-                        || bytes[loc] == b'\n'
-                        || bytes[loc] == b'\r')
-                {
-                    loc += 1;
-                }
+        for elem in self.elements.iter() {
+            // Skip whitespace before each element (like pyparsing's preParse),
+            // unless ctx.skip_whitespace is false (e.g., inside Combine)
+            if ctx.skip_whitespace && elem.skip_whitespace_before() {
+                loc = skip_ws(input, loc);
             }
             match elem.parse_impl(ctx, loc) {
                 Ok((new_loc, res)) => {
@@ -54,23 +46,18 @@ impl ParserElement for And {
     #[inline]
     fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
         let mut pos = loc;
-        let bytes = input.as_bytes();
-        let len = bytes.len();
-        for (i, elem) in self.elements.iter().enumerate() {
-            // Skip whitespace between elements (not before the first)
-            if i > 0 {
-                while pos < len
-                    && (bytes[pos] == b' '
-                        || bytes[pos] == b'\t'
-                        || bytes[pos] == b'\n'
-                        || bytes[pos] == b'\r')
-                {
-                    pos += 1;
-                }
+        for elem in self.elements.iter() {
+            // Skip whitespace before each element
+            if elem.skip_whitespace_before() {
+                pos = skip_ws(input, pos);
             }
             pos = elem.try_match_at(input, pos)?;
         }
         Some(pos)
+    }
+
+    fn parser_kind(&self) -> ParserKind {
+        ParserKind::Complex
     }
 }
 
@@ -112,5 +99,9 @@ impl ParserElement for MatchFirst {
             }
         }
         None
+    }
+
+    fn parser_kind(&self) -> ParserKind {
+        ParserKind::Complex
     }
 }

@@ -1,6 +1,6 @@
 use crate::core::context::ParseContext;
 use crate::core::exceptions::ParseException;
-use crate::core::parser::{ParseResult, ParserElement};
+use crate::core::parser::{ParseResult, ParserElement, ParserKind};
 use crate::core::results::ParseResults;
 use std::sync::Arc;
 
@@ -84,8 +84,8 @@ impl ParserElement for Group {
     fn parse_impl<'a>(&self, ctx: &mut ParseContext<'a>, loc: usize) -> ParseResult<'a> {
         match self.element.parse_impl(ctx, loc) {
             Ok((new_loc, res)) => {
-                // Group just passes through the tokens (grouping is semantic at the Python level)
-                Ok((new_loc, res))
+                // Wrap inner results in a Group item so nesting is preserved
+                Ok((new_loc, ParseResults::from_group(res)))
             }
             Err(e) => Err(e),
         }
@@ -95,6 +95,10 @@ impl ParserElement for Group {
     #[inline]
     fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
         self.element.try_match_at(input, loc)
+    }
+
+    fn parser_kind(&self) -> ParserKind {
+        ParserKind::Group
     }
 }
 
@@ -123,6 +127,10 @@ impl ParserElement for Suppress {
     fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
         self.element.try_match_at(input, loc)
     }
+
+    fn parser_kind(&self) -> ParserKind {
+        ParserKind::Suppress
+    }
 }
 
 /// Combine - joins matched tokens into a single concatenated string.
@@ -140,15 +148,23 @@ impl Combine {
 
 impl ParserElement for Combine {
     fn parse_impl<'a>(&self, ctx: &mut ParseContext<'a>, loc: usize) -> ParseResult<'a> {
-        let (new_loc, _res) = self.element.parse_impl(ctx, loc)?;
+        // Combine disables whitespace skipping for its inner elements (like pyparsing's leave_whitespace)
+        let old_skip = ctx.skip_whitespace;
+        ctx.skip_whitespace = false;
+        let result = self.element.parse_impl(ctx, loc);
+        ctx.skip_whitespace = old_skip;
+        let (new_loc, _res) = result?;
         // Instead of joining individual tokens, just slice the original input
         let combined = &ctx.input()[loc..new_loc];
         Ok((new_loc, ParseResults::from_single(combined)))
     }
 
-    /// Zero-alloc match — delegates to inner element
+    /// Combine must use parse_impl for matching to correctly disable whitespace skipping.
+    /// Without this, try_match_at would delegate to And's try_match_at which skips whitespace
+    /// between elements, causing false positive matches in search_string.
     #[inline]
     fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
-        self.element.try_match_at(input, loc)
+        let mut ctx = ParseContext::new(input);
+        self.parse_impl(&mut ctx, loc).ok().map(|(end, _)| end)
     }
 }

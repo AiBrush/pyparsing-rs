@@ -412,9 +412,12 @@ class TestBoundaryConditions:
             regex.parse_string("no digits here")
 
     def test_literal_matches_method(self):
-        """matches() method should return True/False without raising."""
+        """matches() method should return True/False without raising.
+        Like pyparsing, matches() uses parseAll=True (requires full match)."""
         lit = pp.Literal("hello")
-        assert lit.matches("hello world") is True
+        assert lit.matches("hello") is True
+        assert lit.matches("hello world") is False  # partial match fails (parseAll=True)
+        assert lit.matches("  hello  ") is True  # leading/trailing whitespace is skipped
         assert lit.matches("goodbye") is False
         assert lit.matches("") is False
 
@@ -911,10 +914,12 @@ class TestStressAndCornerCases:
     """Additional corner cases and stress tests."""
 
     def test_literal_whitespace_only(self):
-        """Literal matching whitespace."""
+        """Literal matching whitespace — pyparsing skips leading ws, so this fails."""
         lit = pp.Literal("   ")
-        result = lit.parse_string("   hello")
-        assert result == ["   "]
+        # After whitespace skipping, "   " is not found at position 3 ("hello")
+        import pytest
+        with pytest.raises(ValueError):
+            lit.parse_string("   hello")
 
     def test_literal_special_chars(self):
         """Literal with special regex characters should work (no regex interpretation)."""

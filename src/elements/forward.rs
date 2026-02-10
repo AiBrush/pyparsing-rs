@@ -1,6 +1,6 @@
 use crate::core::context::ParseContext;
 use crate::core::exceptions::ParseException;
-use crate::core::parser::{ParseResult, ParserElement};
+use crate::core::parser::{ParseResult, ParserElement, ParserKind};
 use std::sync::{Arc, RwLock};
 
 /// Forward - placeholder for recursive grammar definitions.
@@ -35,5 +35,9 @@ impl ParserElement for Forward {
     fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
         let guard = self.inner.read().unwrap();
         guard.as_ref()?.try_match_at(input, loc)
+    }
+
+    fn parser_kind(&self) -> ParserKind {
+        ParserKind::Complex
     }
 }
