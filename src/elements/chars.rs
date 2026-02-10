@@ -227,9 +227,22 @@ impl RegexMatch {
         let error_msg: Arc<str> = format!("Expected match for /{}/", pattern).into();
         let fast_path = detect_fast_path(pattern);
 
+        // Try unicode(false) first for ASCII-optimized matching (much faster for \w, \d, etc.)
+        // Fall back to unicode(true) if the pattern requires Unicode features
+        let (compiled, search_compiled) = match (
+            regex::RegexBuilder::new(&anchored).unicode(false).build(),
+            regex::RegexBuilder::new(&unanchored).unicode(false).build(),
+        ) {
+            (Ok(a), Ok(s)) => (a, s),
+            _ => (
+                regex::Regex::new(&anchored)?,
+                regex::Regex::new(&unanchored)?,
+            ),
+        };
+
         Ok(Self {
-            pattern: regex::Regex::new(&anchored)?,
-            search_pattern: regex::Regex::new(&unanchored)?,
+            pattern: compiled,
+            search_pattern: search_compiled,
             error_msg,
             fast_path,
         })
@@ -345,12 +358,28 @@ impl ParserElement for QuotedString {
         let input = ctx.input();
         let bytes = input.as_bytes();
         if let Some((end, cs, ce)) = self.find_end(bytes, loc) {
-            let result_str = if self.unquote {
-                &input[cs..ce]
+            if self.unquote {
+                if let Some(esc) = self.esc_char {
+                    // Process escape characters: strip escape char, keep the escaped char
+                    let content = &bytes[cs..ce];
+                    let mut unescaped = String::with_capacity(ce - cs);
+                    let mut i = 0;
+                    while i < content.len() {
+                        if content[i] == esc && i + 1 < content.len() {
+                            unescaped.push(content[i + 1] as char);
+                            i += 2;
+                        } else {
+                            unescaped.push(content[i] as char);
+                            i += 1;
+                        }
+                    }
+                    Ok((end, ParseResults::from_single(&unescaped)))
+                } else {
+                    Ok((end, ParseResults::from_single(&input[cs..ce])))
+                }
             } else {
-                &input[loc..end]
-            };
-            Ok((end, ParseResults::from_single(result_str)))
+                Ok((end, ParseResults::from_single(&input[loc..end])))
+            }
         } else {
             Err(ParseException::new(loc, self.error_msg.clone()))
         }

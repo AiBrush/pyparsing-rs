@@ -1,6 +1,6 @@
-use crate::core::context::ParseContext;
+use crate::core::context::{skip_ws, ParseContext};
 use crate::core::exceptions::ParseException;
-use crate::core::parser::{ParseResult, ParserElement};
+use crate::core::parser::{ParseResult, ParserElement, ParserKind};
 use crate::core::results::ParseResults;
 use std::sync::Arc;
 
@@ -18,13 +18,25 @@ impl ZeroOrMore {
 impl ParserElement for ZeroOrMore {
     fn parse_impl<'a>(&self, ctx: &mut ParseContext<'a>, mut loc: usize) -> ParseResult<'a> {
         let mut results = ParseResults::new();
+        let input = ctx.input();
 
-        while let Ok((new_loc, res)) = self.element.parse_impl(ctx, loc) {
-            if new_loc == loc {
-                break;
+        loop {
+            // Skip whitespace before each repetition (like pyparsing)
+            let try_loc = if ctx.skip_whitespace && self.element.skip_whitespace_before() {
+                skip_ws(input, loc)
+            } else {
+                loc
+            };
+            match self.element.parse_impl(ctx, try_loc) {
+                Ok((new_loc, res)) => {
+                    if new_loc == try_loc {
+                        break;
+                    }
+                    results.extend(res);
+                    loc = new_loc;
+                }
+                Err(_) => break,
             }
-            results.extend(res);
-            loc = new_loc;
         }
 
         Ok((loc, results))
@@ -34,13 +46,23 @@ impl ParserElement for ZeroOrMore {
     #[inline]
     fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
         let mut pos = loc;
-        while let Some(end) = self.element.try_match_at(input, pos) {
-            if end == pos {
-                break;
+        loop {
+            // Skip whitespace before each repetition
+            let try_pos = if self.element.skip_whitespace_before() {
+                skip_ws(input, pos)
+            } else {
+                pos
+            };
+            match self.element.try_match_at(input, try_pos) {
+                Some(end) if end > try_pos => pos = end,
+                _ => break,
             }
-            pos = end;
         }
         Some(pos)
+    }
+
+    fn parser_kind(&self) -> ParserKind {
+        ParserKind::Complex
     }
 }
 
@@ -59,14 +81,26 @@ impl ParserElement for OneOrMore {
     fn parse_impl<'a>(&self, ctx: &mut ParseContext<'a>, mut loc: usize) -> ParseResult<'a> {
         let mut results = ParseResults::new();
         let mut count = 0;
+        let input = ctx.input();
 
-        while let Ok((new_loc, res)) = self.element.parse_impl(ctx, loc) {
-            if new_loc == loc {
-                break;
+        loop {
+            // Skip whitespace before each repetition (like pyparsing)
+            let try_loc = if ctx.skip_whitespace && self.element.skip_whitespace_before() {
+                skip_ws(input, loc)
+            } else {
+                loc
+            };
+            match self.element.parse_impl(ctx, try_loc) {
+                Ok((new_loc, res)) => {
+                    if new_loc == try_loc {
+                        break;
+                    }
+                    results.extend(res);
+                    loc = new_loc;
+                    count += 1;
+                }
+                Err(_) => break,
             }
-            results.extend(res);
-            loc = new_loc;
-            count += 1;
         }
 
         if count == 0 {
@@ -79,14 +113,29 @@ impl ParserElement for OneOrMore {
     /// Zero-alloc match — requires at least one match, then repeats
     #[inline]
     fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
-        let mut pos = self.element.try_match_at(input, loc)?;
-        while let Some(end) = self.element.try_match_at(input, pos) {
-            if end == pos {
-                break;
+        // First match is required — skip whitespace before it
+        let try_loc = if self.element.skip_whitespace_before() {
+            skip_ws(input, loc)
+        } else {
+            loc
+        };
+        let mut pos = self.element.try_match_at(input, try_loc)?;
+        loop {
+            let try_pos = if self.element.skip_whitespace_before() {
+                skip_ws(input, pos)
+            } else {
+                pos
+            };
+            match self.element.try_match_at(input, try_pos) {
+                Some(end) if end > try_pos => pos = end,
+                _ => break,
             }
-            pos = end;
         }
         Some(pos)
+    }
+
+    fn parser_kind(&self) -> ParserKind {
+        ParserKind::Complex
     }
 }
 
@@ -131,8 +180,13 @@ impl Exactly {
 impl ParserElement for Exactly {
     fn parse_impl<'a>(&self, ctx: &mut ParseContext<'a>, mut loc: usize) -> ParseResult<'a> {
         let mut results = ParseResults::new();
+        let input = ctx.input();
 
         for _ in 0..self.count {
+            // Skip whitespace before each repetition
+            if ctx.skip_whitespace && self.element.skip_whitespace_before() {
+                loc = skip_ws(input, loc);
+            }
             let (new_loc, res) = self.element.parse_impl(ctx, loc)?;
             if new_loc == loc {
                 return Err(ParseException::new(loc, "No progress in Exactly"));
@@ -148,6 +202,9 @@ impl ParserElement for Exactly {
     fn try_match_at(&self, input: &str, loc: usize) -> Option<usize> {
         let mut pos = loc;
         for _ in 0..self.count {
+            if self.element.skip_whitespace_before() {
+                pos = skip_ws(input, pos);
+            }
             let end = self.element.try_match_at(input, pos)?;
             if end == pos {
                 return None;

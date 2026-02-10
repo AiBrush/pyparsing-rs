@@ -127,4 +127,19 @@ impl ParserElement for RestOfLine {
         let rest = &input[loc..];
         Some(rest.find('\n').map(|p| loc + p).unwrap_or(input.len()))
     }
+
+    /// RestOfLine should NOT have whitespace skipped before it (preserves leading space).
+    fn skip_whitespace_before(&self) -> bool {
+        false
+    }
+
+    /// RestOfLine's parse_string should NOT skip leading whitespace.
+    fn parse_string(
+        &self,
+        input: &str,
+    ) -> Result<crate::core::results::ParseResults, crate::core::exceptions::ParseException> {
+        let mut ctx = ParseContext::new(input);
+        let (_, results) = self.parse_impl(&mut ctx, 0)?;
+        Ok(results)
+    }
 }

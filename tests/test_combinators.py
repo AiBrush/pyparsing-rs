@@ -102,7 +102,8 @@ class TestForward:
     def test_forward_matches(self):
         fwd = pp.Forward()
         fwd.set(pp.Literal("hello"))
-        assert fwd.matches("hello world")
+        assert fwd.matches("hello")
+        assert not fwd.matches("hello world")  # parseAll=True: partial match fails
         assert not fwd.matches("goodbye")
 
     def test_forward_search(self):
